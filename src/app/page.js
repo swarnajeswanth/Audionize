@@ -1,103 +1,125 @@
-import Image from "next/image";
+"use client";
+import { useRef, useState } from "react";
+import HomePage from "../components/HomePage";
+import HostPage from "../components/HostPage";
+import JoinPage from "../components/JoinPage";
+import SettingsPage from "../components/SettingsPage";
 
-export default function Home() {
+const PAGES = ["home", "host", "join", "settings"];
+
+function classNames(...classes) {
+  return classes.filter(Boolean).join(" ");
+}
+
+export default function SyncSound() {
+  const [page, setPage] = useState("home");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const particlesRef = useRef();
+
+  // Page navigation
+  const showPage = (id) => {
+    setPage(id);
+    setMobileMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.js
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+    <div className="relative overflow-x-hidden min-h-screen font-[Inter,sans-serif] bg-gradient-to-br from-slate-900 to-slate-800 text-slate-200">
+      {/* Floating particles */}
+      <div ref={particlesRef} className="fixed inset-0 -z-10" />
+      {/* Main app container */}
+      <div className="min-h-screen flex flex-col">
+        {/* Navigation */}
+        <nav className="p-4 fixed w-full z-50 bg-slate-900/70 backdrop-blur border-b border-white/10 shadow-lg">
+          <div className="container mx-auto flex justify-between items-center">
+            <div className="flex items-center space-x-2">
+              {/* Logo */}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-8 w-8 text-indigo-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                />
+              </svg>
+              <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                SyncSound
+              </span>
+            </div>
+            <div className="hidden md:flex space-x-6">
+              {PAGES.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => showPage(p)}
+                  className={classNames(
+                    "text-slate-300 hover:text-white transition",
+                    page === p && "font-bold text-white"
+                  )}
+                >
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </button>
+              ))}
+            </div>
+            <button
+              className="md:hidden text-slate-300"
+              onClick={() => setMobileMenuOpen((v) => !v)}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
+              </svg>
+            </button>
+          </div>
+          {/* Mobile menu */}
+          {mobileMenuOpen && (
+            <div className="md:hidden bg-slate-800/90 mt-2 rounded-lg p-4">
+              <div className="flex flex-col space-y-3">
+                {PAGES.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => showPage(p)}
+                    className={classNames(
+                      "text-slate-300 hover:text-white transition text-left",
+                      page === p && "font-bold text-white"
+                    )}
+                  >
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </nav>
+        {/* Main content area */}
+        <main className="flex-grow container mx-auto px-4 pt-24 pb-12">
+          {page === "home" && <HomePage showPage={showPage} />}
+          {page === "host" && <HostPage />}
+          {page === "join" && <JoinPage />}
+          {page === "settings" && <SettingsPage />}
+        </main>
+        {/* Footer */}
+        <footer className="p-4 text-center text-sm text-slate-400 bg-slate-900/70 border-t border-white/10">
+          <div className="container mx-auto">
+            <p>© 2023 SyncSound. All rights reserved.</p>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
