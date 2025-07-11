@@ -19,7 +19,8 @@ const handler = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials, req) {
-        // Rate limiting
+        // Rate limitin
+        // g
         const clientIp =
           req.headers?.["x-forwarded-for"] ||
           req.headers?.["x-real-ip"] ||
