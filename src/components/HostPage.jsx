@@ -22,6 +22,7 @@ import {
   addSyncMessage,
 } from "../store/slices/syncSlice";
 import { useSyncService } from "../hooks/useSyncService";
+import ModernAudioPlayer from "./ModernAudioPlayer";
 import toast from "react-hot-toast";
 
 export default function HostPage() {
@@ -32,12 +33,7 @@ export default function HostPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [audioFile, setAudioFileState] = useState(null);
   const [audioUrl, setAudioUrlState] = useState(null);
-  const [isPlaying, setIsPlayingState] = useState(false);
-  const [currentTime, setCurrentTimeState] = useState(0);
-  const [duration, setDurationState] = useState(0);
-  const [playerVolume, setPlayerVolume] = useState(1);
   const [audioBlob, setAudioBlob] = useState(null);
-  const audioRef = useRef();
 
   // Generate 6-digit session code
   const generateSessionCodeValue = () => {
@@ -130,8 +126,9 @@ export default function HostPage() {
         setAudioFileState(file);
         const url = URL.createObjectURL(file);
         setAudioUrlState(url);
-        setCurrentTimeState(0);
-        setDurationState(0);
+        dispatch(setAudioUrl(url));
+        dispatch(setCurrentTime(0));
+        dispatch(setDuration(0));
 
         // Convert file to blob for sharing
         const blob = new Blob([file], { type: file.type });
@@ -149,66 +146,21 @@ export default function HostPage() {
     }
   };
 
-  // Player controls
+  // Modern Audio Player Event Handlers
   const handlePlay = () => {
-    setIsPlayingState(true);
-    dispatch(setIsPlaying(true));
-    if (audioRef.current) {
-      audioRef.current.play();
-
-      // Send play command to all clients
-      sendPlay(audioRef.current.currentTime);
-    }
+    sendPlay();
   };
 
   const handlePause = () => {
-    setIsPlayingState(false);
-    dispatch(setIsPlaying(false));
-    if (audioRef.current) {
-      audioRef.current.pause();
-
-      // Send pause command to all clients
-      sendPause();
-    }
+    sendPause();
   };
 
-  const handleSeek = (e) => {
-    const time = parseFloat(e.target.value);
-    setCurrentTimeState(time);
-    if (audioRef.current) {
-      audioRef.current.currentTime = time;
-
-      // Send seek command to all clients
-      sendSeek(time);
-    }
+  const handleSeek = (time) => {
+    sendSeek(time);
   };
 
-  const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      const time = audioRef.current.currentTime;
-      setCurrentTimeState(time);
-      dispatch(setCurrentTime(time));
-    }
-  };
-
-  const handleLoadedMetadata = () => {
-    if (audioRef.current) {
-      const dur = audioRef.current.duration || 0;
-      setDurationState(dur);
-      dispatch(setDuration(dur));
-    }
-  };
-
-  // Volume control
-  const handleVolumeChange = (e) => {
-    const vol = Number(e.target.value);
-    setPlayerVolume(vol);
-    if (audioRef.current) {
-      audioRef.current.volume = vol;
-
-      // Send volume change to all clients
-      sendVolume(vol);
-    }
+  const handleVolumeChange = (volume) => {
+    sendVolume(volume);
   };
 
   // Client management
@@ -224,10 +176,8 @@ export default function HostPage() {
 
   // Sync all clients to current position
   const handleSyncMusic = () => {
-    if (audioRef.current) {
-      sendSyncAll(audioRef.current.currentTime);
-      toast.success("All clients synced to current position");
-    }
+    sendSyncAll();
+    toast.success("All clients synced to current position");
   };
 
   // Initialize connection
@@ -321,76 +271,33 @@ export default function HostPage() {
           />
         </div>
 
-        {/* Audio Player */}
+        {/* Modern Audio Player */}
         {audioUrl ? (
-          <div className="space-y-4 mb-6">
-            <div className="bg-slate-700/30 rounded-lg p-4">
-              <audio
-                ref={audioRef}
-                src={audioUrl}
-                onTimeUpdate={handleTimeUpdate}
-                onLoadedMetadata={handleLoadedMetadata}
-                onPlay={handlePlay}
-                onPause={handlePause}
-                onError={(e) => {
-                  console.error("Audio error:", e);
-                  toast.error("Audio playback error");
-                }}
-                className="w-full"
-                controls
-                preload="metadata"
-              />
-            </div>
+          <div className="mb-6">
+            <ModernAudioPlayer
+              audioUrl={audioUrl}
+              onPlay={handlePlay}
+              onPause={handlePause}
+              onSeek={handleSeek}
+              onVolumeChange={handleVolumeChange}
+              isHost={true}
+            />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Progress
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max={duration || 0}
-                  value={currentTime || 0}
-                  onChange={handleSeek}
-                  className="w-full accent-blue-500"
-                />
-                <div className="flex justify-between text-sm text-slate-400 mt-1">
-                  <span>{formatTime(currentTime)}</span>
-                  <span>{formatTime(duration)}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Volume
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={playerVolume}
-                  onChange={handleVolumeChange}
-                  className="w-full accent-blue-500"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2">
+            {/* Sync Button */}
+            <div className="mt-4 flex justify-center">
               <button
                 onClick={handleSyncMusic}
-                className="bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded text-white text-sm transition-colors"
+                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 px-6 py-3 rounded-lg text-white font-semibold transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
               >
                 Sync All Clients
               </button>
             </div>
           </div>
         ) : (
-          <div className="text-center py-8 bg-slate-700/30 rounded-lg mb-6">
-            <div className="text-slate-400 mb-2">
+          <div className="text-center py-12 bg-slate-700/30 rounded-lg mb-6">
+            <div className="text-slate-400 mb-4">
               <svg
-                className="w-12 h-12 mx-auto mb-4"
+                className="w-16 h-16 mx-auto mb-4"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -403,7 +310,7 @@ export default function HostPage() {
                 />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-slate-300 mb-2">
+            <h3 className="text-xl font-semibold text-slate-300 mb-2">
               Upload Audio to Start
             </h3>
             <p className="text-slate-400">
@@ -420,9 +327,9 @@ export default function HostPage() {
               {connectedClients.map((client) => (
                 <div
                   key={client.id}
-                  className="flex items-center justify-between p-2 bg-slate-600/30 rounded"
+                  className="flex items-center justify-between p-3 bg-slate-600/30 rounded-lg border border-slate-500/20"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
                     {/* Mic status icon (placeholder, replace with real state) */}
                     <span
                       className={`inline-block w-3 h-3 rounded-full border-2 ${
@@ -432,33 +339,23 @@ export default function HostPage() {
                       }`}
                       title={client.isMuted ? "Muted" : "Unmuted"}
                     ></span>
-                    <span className="font-medium">{client.name}</span>
-                    <span className="text-xs text-slate-400 ml-2">
+                    <span className="font-medium text-white">
+                      {client.name}
+                    </span>
+                    <span className="text-xs text-slate-400">
                       Joined {new Date(client.joinedAt).toLocaleTimeString()}
                     </span>
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => {
-                        if (window.syncService && window.syncService.socket) {
-                          window.syncService.socket.emit("mute-client", {
-                            clientId: client.id,
-                          });
-                        }
-                      }}
-                      className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded hover:bg-yellow-500/30"
+                      onClick={() => handleMuteClient(client.id)}
+                      className="text-xs bg-yellow-500/20 text-yellow-400 px-3 py-1 rounded-lg hover:bg-yellow-500/30 transition-colors border border-yellow-500/30"
                     >
                       Mute
                     </button>
                     <button
-                      onClick={() => {
-                        if (window.syncService && window.syncService.socket) {
-                          window.syncService.socket.emit("disconnect-client", {
-                            clientId: client.id,
-                          });
-                        }
-                      }}
-                      className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded hover:bg-red-500/30"
+                      onClick={() => handleDisconnectClient(client.id)}
+                      className="text-xs bg-red-500/20 text-red-400 px-3 py-1 rounded-lg hover:bg-red-500/30 transition-colors border border-red-500/30"
                     >
                       Disconnect
                     </button>
@@ -471,11 +368,4 @@ export default function HostPage() {
       </div>
     </div>
   );
-}
-
-function formatTime(seconds) {
-  if (!seconds || isNaN(seconds)) return "0:00";
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
