@@ -100,6 +100,30 @@ export default function ClientPage() {
     dispatch(addSyncMessage({ type: "received", data }));
   };
 
+  // Handle audio sync events directly from socket
+  const handleAudioSync = (data) => {
+    console.log("Received audio_sync event:", data);
+    try {
+      // Handle audio blob data
+      if (data.audioBlob) {
+        const audioBlob = new Blob([data.audioBlob], { type: "audio/mpeg" });
+        setAudioBlob(audioBlob);
+        const url = URL.createObjectURL(audioBlob);
+        dispatch(setAudioUrl(url));
+        dispatch(setAudioFile(audioBlob));
+        toast.success("New audio received from host");
+      }
+      // Handle audio URL data
+      else if (data.audioUrl) {
+        dispatch(setAudioUrl(data.audioUrl));
+        toast.success("New audio received from host");
+      }
+    } catch (error) {
+      console.error("Error processing audio sync:", error);
+      toast.error("Failed to load audio from host");
+    }
+  };
+
   // Connect to sync service
   const {
     setMessageHandler,
@@ -122,6 +146,13 @@ export default function ClientPage() {
       setMessageHandler(handleSync);
     }
   }, [setMessageHandler, sessionCode, userName]);
+
+  // Set up audio update handler
+  useEffect(() => {
+    if (setAudioUpdateHandler && sessionCode && userName) {
+      setAudioUpdateHandler(handleAudioSync);
+    }
+  }, [setAudioUpdateHandler, sessionCode, userName]);
 
   useEffect(() => {
     if (sessionCode && userName) {

@@ -422,7 +422,16 @@ export default function HostPage() {
                   key={client.id}
                   className="flex items-center justify-between p-2 bg-slate-600/30 rounded"
                 >
-                  <div>
+                  <div className="flex items-center gap-2">
+                    {/* Mic status icon (placeholder, replace with real state) */}
+                    <span
+                      className={`inline-block w-3 h-3 rounded-full border-2 ${
+                        client.isMuted
+                          ? "bg-red-500 border-red-400"
+                          : "bg-green-400 border-green-300"
+                      }`}
+                      title={client.isMuted ? "Muted" : "Unmuted"}
+                    ></span>
                     <span className="font-medium">{client.name}</span>
                     <span className="text-xs text-slate-400 ml-2">
                       Joined {new Date(client.joinedAt).toLocaleTimeString()}
@@ -430,13 +439,25 @@ export default function HostPage() {
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => handleMuteClient(client.id)}
+                      onClick={() => {
+                        if (window.syncService && window.syncService.socket) {
+                          window.syncService.socket.emit("mute-client", {
+                            clientId: client.id,
+                          });
+                        }
+                      }}
                       className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded hover:bg-yellow-500/30"
                     >
                       Mute
                     </button>
                     <button
-                      onClick={() => handleDisconnectClient(client.id)}
+                      onClick={() => {
+                        if (window.syncService && window.syncService.socket) {
+                          window.syncService.socket.emit("disconnect-client", {
+                            clientId: client.id,
+                          });
+                        }
+                      }}
                       className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded hover:bg-red-500/30"
                     >
                       Disconnect

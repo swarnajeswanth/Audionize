@@ -17,6 +17,8 @@ const initialState = {
   autoReconnect: true,
   normalizeVolume: false,
   bufferSize: "Medium (Balanced)",
+  // Add mic status map: { [clientId]: boolean }
+  micStatus: {},
 };
 
 const syncSlice = createSlice({
@@ -130,6 +132,31 @@ const syncSlice = createSlice({
     setBufferSize: (state, action) => {
       state.bufferSize = action.payload;
     },
+    // Add mic status update reducer
+    updateMicStatus: (state, action) => {
+      return {
+        ...state,
+        micStatus: {
+          ...state.micStatus,
+          [action.payload.clientId]: action.payload.isMuted,
+        },
+      };
+    },
+    // Optionally, handle presence-update to reset micStatus for new clients
+    presenceUpdate: (state, action) => {
+      const { clients } = action.payload;
+      const newMicStatus = { ...state.micStatus };
+      clients.forEach((client) => {
+        if (!(client.id in newMicStatus)) {
+          newMicStatus[client.id] = false; // default to unmuted
+        }
+      });
+      return {
+        ...state,
+        connectedClients: clients,
+        micStatus: newMicStatus,
+      };
+    },
   },
 });
 
@@ -156,6 +183,9 @@ export const {
   setAutoReconnect,
   setNormalizeVolume,
   setBufferSize,
+  // Add mic status update actions
+  updateMicStatus,
+  presenceUpdate,
 } = syncSlice.actions;
 
 export default syncSlice.reducer;

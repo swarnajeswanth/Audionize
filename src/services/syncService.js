@@ -69,6 +69,44 @@ class SyncService {
         this.onAudioUpdateCallback(data);
       }
     });
+
+    // Add handler for audio_sync events from server
+    this.socket.on("audio_sync", (data) => {
+      console.log("Received audio_sync from server:", data);
+      if (this.onAudioUpdateCallback) {
+        this.onAudioUpdateCallback(data);
+      }
+    });
+
+    // Add handlers for individual playback commands
+    this.socket.on("play_command", (data) => {
+      console.log("Received play command:", data);
+      if (this.onMessageCallback) {
+        this.onMessageCallback({ type: "play", ...data });
+      }
+    });
+
+    this.socket.on("pause_command", (data) => {
+      console.log("Received pause command:", data);
+      if (this.onMessageCallback) {
+        this.onMessageCallback({ type: "pause", ...data });
+      }
+    });
+
+    this.socket.on("seek_command", (data) => {
+      console.log("Received seek command:", data);
+      if (this.onMessageCallback) {
+        this.onMessageCallback({ type: "seek", ...data });
+      }
+    });
+
+    this.socket.on("volume_command", (data) => {
+      console.log("Received volume command:", data);
+      if (this.onMessageCallback) {
+        this.onMessageCallback({ type: "volume", ...data });
+      }
+    });
+
     this.socket.on("playback-action", (data) => {
       console.log("Received playback action:", data);
       if (this.onMessageCallback) {
@@ -90,8 +128,8 @@ class SyncService {
   sendAudio(audioBlob, fileName, fileSize) {
     if (this.socket && this.isConnected) {
       console.log("Sending audio to clients:", { fileName, fileSize });
-      this.socket.emit("audio-uploaded", {
-        session: this.sessionCode,
+      this.socket.emit("audio_upload", {
+        sessionCode: this.sessionCode,
         audioBlob,
         fileName,
         fileSize,
@@ -106,9 +144,8 @@ class SyncService {
   sendPlay(currentTime = 0) {
     if (this.socket && this.isConnected) {
       console.log("Sending play command:", { currentTime });
-      this.socket.emit("playback-action", {
-        session: this.sessionCode,
-        type: "play",
+      this.socket.emit("play_command", {
+        sessionCode: this.sessionCode,
         currentTime: currentTime,
         timestamp: Date.now(),
       });
@@ -121,9 +158,8 @@ class SyncService {
   sendPause() {
     if (this.socket && this.isConnected) {
       console.log("Sending pause command");
-      this.socket.emit("playback-action", {
-        session: this.sessionCode,
-        type: "pause",
+      this.socket.emit("pause_command", {
+        sessionCode: this.sessionCode,
         timestamp: Date.now(),
       });
     } else {
@@ -134,9 +170,8 @@ class SyncService {
   // Send seek command to clients
   sendSeek(currentTime) {
     if (this.socket && this.isConnected) {
-      this.socket.emit("playback-action", {
-        session: this.sessionCode,
-        type: "seek",
+      this.socket.emit("seek_command", {
+        sessionCode: this.sessionCode,
         currentTime: currentTime,
         timestamp: Date.now(),
       });
@@ -146,9 +181,8 @@ class SyncService {
   // Send volume command to clients
   sendVolume(volume) {
     if (this.socket && this.isConnected) {
-      this.socket.emit("playback-action", {
-        session: this.sessionCode,
-        type: "volume",
+      this.socket.emit("volume_command", {
+        sessionCode: this.sessionCode,
         volume: volume,
         timestamp: Date.now(),
       });

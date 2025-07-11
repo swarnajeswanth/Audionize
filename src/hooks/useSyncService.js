@@ -1,9 +1,12 @@
 import { useEffect, useRef, useCallback } from "react";
 import syncService from "../services/syncService";
 import toast from "react-hot-toast";
+import { useAppDispatch } from "../store/hooks";
+import { setAudioUrl, setAudioFile } from "../store/slices/audioSlice";
 
 export const useSyncService = (sessionCode, role, userName) => {
   const isConnectedRef = useRef(false);
+  const dispatch = useAppDispatch();
 
   // Connect to sync service
   useEffect(() => {
@@ -135,6 +138,41 @@ export const useSyncService = (sessionCode, role, userName) => {
       };
     }
   }, []);
+
+  // Handle audio sync from server
+  useEffect(() => {
+    if (syncService.socket) {
+      const handler = (data) => {
+        console.log("Received audio_sync:", data);
+        try {
+          // Handle audio blob data
+          if (data.audioBlob) {
+            const audioBlob = new Blob([data.audioBlob], {
+              type: "audio/mpeg",
+            });
+            const url = URL.createObjectURL(audioBlob);
+            dispatch(setAudioUrl(url));
+            dispatch(setAudioFile(audioBlob));
+            toast.success("New audio received from host");
+          }
+          // Handle audio URL data
+          else if (data.audioUrl) {
+            dispatch(setAudioUrl(data.audioUrl));
+            toast.success("New audio received from host");
+          }
+        } catch (error) {
+          console.error("Error processing audio sync:", error);
+          toast.error("Failed to load audio from host");
+        }
+      };
+      syncService.socket.on("audio_sync", handler);
+      return () => {
+        if (syncService.socket) {
+          syncService.socket.off("audio_sync", handler);
+        }
+      };
+    }
+  }, [dispatch]);
 
   return {
     setMessageHandler,
