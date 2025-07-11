@@ -1,22 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSecurityHeaders } from "./utils/security";
 
-const express = require("express");
-const http = require("http");
-const { Server: IOServer } = require("socket.io");
-const WebSocket = require("ws");
-
-const app = express();
-const server = http.createServer(app);
-const io = new IOServer(server, {
-  path: "/socket.io",
-  cors: {
-    origin: "*", // You can restrict this to your frontend domain in production
-    methods: ["GET", "POST"],
-  },
-});
-const wss = new WebSocket.Server({ server, path: "/ws" });
-
 const PORT = process.env.PORT || 4000;
 const sessions = {}; // { sessionCode: { host, clients, audioUrl, ... } }
 
