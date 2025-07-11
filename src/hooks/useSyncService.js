@@ -1,11 +1,28 @@
-import { useEffect, useRef, useCallback } from "react";
+import React, {
+  useEffect,
+  useCallback,
+  useRef,
+  useImperativeHandle,
+  forwardRef,
+} from "react";
 import syncService from "../services/syncService";
 import toast from "react-hot-toast";
 import { useAppDispatch } from "../store/hooks";
 import { setAudioUrl, setAudioFile } from "../store/slices/audioSlice";
+import {
+  clearSync,
+  setConnected,
+  setSyncStatus,
+} from "../store/slices/syncSlice";
+import { clearSession } from "../store/slices/sessionSlice";
 
-export const useSyncService = (sessionCode, role, userName) => {
-  const isConnectedRef = useRef(false);
+export const useSyncService = (
+  sessionCode,
+  role,
+  userName,
+  onHostDisconnect = null
+) => {
+  const isConnectedRef = React.useRef(false);
   const dispatch = useAppDispatch();
 
   // Connect to sync service
@@ -34,9 +51,8 @@ export const useSyncService = (sessionCode, role, userName) => {
     };
   }, [sessionCode, role, userName]);
 
-  // Handle room-full event
+  // Handle room-full event - always call useEffect
   useEffect(() => {
-    // Only attach if socket exists
     if (syncService.socket) {
       const handler = (data) => {
         alert(data.message); // Or use toast.error(data.message) for better UX
@@ -51,7 +67,61 @@ export const useSyncService = (sessionCode, role, userName) => {
         }
       };
     }
+    // Return empty cleanup function if no socket
+    return () => {};
   }, [sessionCode, role, userName]);
+
+  // Handle host disconnection - always call useEffect
+  useEffect(() => {
+    if (syncService.socket) {
+      const handler = (data) => {
+        console.log("Host disconnected:", data);
+
+        // Call the optional callback if provided
+        if (onHostDisconnect) {
+          onHostDisconnect(data);
+        }
+
+        // Clear all sync and session state
+        dispatch(clearSync());
+        dispatch(clearSession());
+
+        // Clear audio state
+        dispatch(setAudioUrl(null));
+        dispatch(setAudioFile(null));
+
+        // Set connection status to disconnected
+        dispatch(setConnected(false));
+        dispatch(setSyncStatus("disconnected"));
+
+        // Clear localStorage
+        if (sessionCode) {
+          localStorage.removeItem(`audionize_client_session_${sessionCode}`);
+          localStorage.removeItem(`audionize_user_${sessionCode}`);
+          localStorage.removeItem("audionize_host_session");
+        }
+
+        // Show notification
+        toast.error("Host has disconnected. Session ended.");
+
+        // Redirect to home page after a short delay
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 2000);
+      };
+
+      syncService.socket.on("host_disconnect", handler);
+
+      // Cleanup
+      return () => {
+        if (syncService.socket) {
+          syncService.socket.off("host_disconnect", handler);
+        }
+      };
+    }
+    // Return empty cleanup function if no socket
+    return () => {};
+  }, [sessionCode, role, userName, dispatch, onHostDisconnect]);
 
   // Set up message handlers
   const setMessageHandler = useCallback((handler) => {
@@ -67,8 +137,8 @@ export const useSyncService = (sessionCode, role, userName) => {
   }, []);
 
   // Send commands
-  const sendAudio = useCallback((audioBlob, fileName, fileSize) => {
-    syncService.sendAudio(audioBlob, fileName, fileSize);
+  const sendAudio = useCallback((audioBuffer, fileName, fileSize, fileType) => {
+    syncService.sendAudio(audioBuffer, fileName, fileSize, fileType);
   }, []);
 
   const sendPlay = useCallback((currentTime = 0) => {
@@ -108,6 +178,7 @@ export const useSyncService = (sessionCode, role, userName) => {
     }
   };
 
+  // Handle mic status updates - always call useEffect
   useEffect(() => {
     if (syncService.socket) {
       const handler = (data) => {
@@ -122,8 +193,11 @@ export const useSyncService = (sessionCode, role, userName) => {
         }
       };
     }
+    // Return empty cleanup function if no socket
+    return () => {};
   }, []);
 
+  // Handle muted event - always call useEffect
   useEffect(() => {
     if (syncService.socket) {
       const handler = () => {
@@ -137,18 +211,21 @@ export const useSyncService = (sessionCode, role, userName) => {
         }
       };
     }
+    // Return empty cleanup function if no socket
+    return () => {};
   }, []);
 
-  // Handle audio sync from server
+  // Handle audio sync from server - always call useEffect
   useEffect(() => {
     if (syncService.socket) {
       const handler = (data) => {
         console.log("Received audio_sync:", data);
         try {
           // Handle audio blob data
-          if (data.audioBlob) {
-            const audioBlob = new Blob([data.audioBlob], {
-              type: "audio/mpeg",
+          if (data.audioBuffer) {
+            // Use the correct type if provided, fallback to "audio/mpeg"
+            const audioBlob = new Blob([new Uint8Array(data.audioBuffer)], {
+              type: data.fileType || "audio/mpeg",
             });
             const url = URL.createObjectURL(audioBlob);
             dispatch(setAudioUrl(url));
@@ -172,6 +249,8 @@ export const useSyncService = (sessionCode, role, userName) => {
         }
       };
     }
+    // Return empty cleanup function if no socket
+    return () => {};
   }, [dispatch]);
 
   return {

@@ -1,8 +1,12 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
-import { setSessionCode, setIsClient } from "../store/slices/sessionSlice";
+import {
+  setSessionCode,
+  setIsClient,
+  clearSession,
+} from "../store/slices/sessionSlice";
 import {
   setAudioFile,
   setAudioUrl,
@@ -14,6 +18,7 @@ import {
   setConnected,
   setSyncStatus,
   addSyncMessage,
+  clearSync,
 } from "../store/slices/syncSlice";
 import { useSyncService } from "../hooks/useSyncService";
 import ModernAudioPlayer from "./ModernAudioPlayer";
@@ -31,41 +36,122 @@ export default function ClientPage() {
   const [userName, setUserName] = useState("");
   const [audioBlob, setAudioBlob] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [showNameInput, setShowNameInput] = useState(false);
+  const [hostDisconnected, setHostDisconnected] = useState(false);
+
+  const audioElementRef = useRef(null);
 
   // Get session code from URL
   const urlCode = searchParams.get("code");
+
+  // Always call useSyncService hook (Rules of Hooks compliance)
+  // Pass empty strings if not ready to connect
+  const {
+    setMessageHandler,
+    setClientUpdateHandler,
+    setAudioUpdateHandler,
+    sendTimeUpdate,
+    isConnected: syncConnected,
+  } = useSyncService(
+    sessionCode || "",
+    userName ? "client" : "",
+    userName || "",
+    (data) => {
+      setHostDisconnected(true);
+    }
+  );
 
   useEffect(() => {
     if (urlCode && !sessionCode) {
       dispatch(setSessionCode(urlCode));
       dispatch(setIsClient(true));
 
-      // Get stored username for this session
-      const storedName = localStorage.getItem(`audionize_user_${urlCode}`);
-      if (storedName) {
-        setUserName(storedName);
+      // Check if user has already joined through JoinSessionModal
+      const storedUserName = localStorage.getItem(`audionize_user_${urlCode}`);
+      if (storedUserName) {
+        // User already joined through modal, use stored name
+        setUserName(storedUserName);
+        setShowNameInput(false);
+      } else {
+        // User came directly to URL, show name input
+        setShowNameInput(true);
       }
     }
   }, [urlCode, sessionCode, dispatch]);
 
-  // Only connect to sync service when both sessionCode and userName are set
-  let setMessageHandler = null;
-  let sendTimeUpdate = null;
-  if (sessionCode && userName) {
-    const syncService = useSyncService(sessionCode, "client", userName);
-    setMessageHandler = syncService.setMessageHandler;
-    sendTimeUpdate = syncService.sendTimeUpdate;
-  }
+  // Check for existing session on page load (for page refresh recovery)
+  useEffect(() => {
+    if (!sessionCode && urlCode) {
+      // Try to recover session from localStorage
+      const storedSession = localStorage.getItem(
+        `audionize_client_session_${urlCode}`
+      );
+      const storedUserName = localStorage.getItem(`audionize_user_${urlCode}`);
+
+      if (storedSession && storedUserName) {
+        try {
+          const sessionData = JSON.parse(storedSession);
+          // Check if session is not too old (within last 24 hours)
+          const sessionAge = Date.now() - sessionData.timestamp;
+          if (sessionAge < 24 * 60 * 60 * 1000) {
+            setUserName(storedUserName);
+            dispatch(setSessionCode(urlCode));
+            setShowNameInput(false);
+            toast.success("Session restored from previous connection");
+          } else {
+            // Session too old, clear it
+            localStorage.removeItem(`audionize_client_session_${urlCode}`);
+            localStorage.removeItem(`audionize_user_${urlCode}`);
+          }
+        } catch (error) {
+          console.error("Error parsing stored session:", error);
+          localStorage.removeItem(`audionize_client_session_${urlCode}`);
+          localStorage.removeItem(`audionize_user_${urlCode}`);
+        }
+      }
+    }
+  }, [urlCode, sessionCode, dispatch]);
+
+  // Initialize connection
+  useEffect(() => {
+    if (sessionCode && userName) {
+      dispatch(setConnected(true));
+      dispatch(setSyncStatus("connected"));
+
+      // Store client session info in localStorage for persistence
+      localStorage.setItem(
+        `audionize_client_session_${sessionCode}`,
+        JSON.stringify({
+          sessionCode,
+          userName,
+          timestamp: Date.now(),
+        })
+      );
+    }
+  }, [sessionCode, userName, dispatch]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Clear session from localStorage
+      if (sessionCode) {
+        localStorage.removeItem(`audionize_client_session_${sessionCode}`);
+        localStorage.removeItem(`audionize_user_${sessionCode}`);
+      }
+    };
+  }, [sessionCode]);
 
   // Handle sync messages from host
   const handleSync = (data) => {
     console.log("Received sync data:", data);
 
-    if (data.type === "audio_uploaded") {
+    if (data.type === "audio_uploaded" && data.audioBuffer) {
       // Host uploaded new audio
       try {
-        // Convert the received data to a proper blob
-        const audioBlob = new Blob([data.audioBlob], { type: "audio/mpeg" });
+        // Convert the received ArrayBuffer to a proper blob
+        const audioBlob = new Blob([new Uint8Array(data.audioBuffer)], {
+          type: data.fileType || "audio/mpeg",
+        });
         setAudioBlob(audioBlob);
         const url = URL.createObjectURL(audioBlob);
         dispatch(setAudioUrl(url));
@@ -75,47 +161,36 @@ export default function ClientPage() {
         console.error("Error processing audio:", error);
         toast.error("Failed to load audio from host");
       }
-    } else if (data.type === "play") {
-      // Host started playback - client can choose to follow or not
-      console.log("Host started playback");
-      // Optionally auto-play for client (you can make this configurable)
-      // dispatch(setIsPlaying(true));
-      if (data.currentTime !== undefined) {
-        dispatch(setCurrentTime(data.currentTime));
-      }
-    } else if (data.type === "pause") {
-      // Host paused playback - client can choose to follow or not
-      console.log("Host paused playback");
-      // Optionally auto-pause for client (you can make this configurable)
-      // dispatch(setIsPlaying(false));
-    } else if (data.type === "seek") {
-      // Host seeked to a position - client can choose to follow or not
-      console.log("Host seeked to:", data.currentTime);
-      if (data.currentTime !== undefined) {
-        dispatch(setCurrentTime(data.currentTime));
-      }
-    } else if (data.type === "volume") {
-      // Host changed volume - client can choose to follow or not
-      console.log("Host changed volume:", data.volume);
-      // Handle volume change if needed
-    } else if (data.type === "sync_all") {
-      // Host synced all clients - client can choose to follow or not
-      console.log("Host synced all clients to:", data.currentTime);
-      if (data.currentTime !== undefined) {
-        dispatch(setCurrentTime(data.currentTime));
-      }
-      toast.success("Synced to host position");
     }
+
+    // --- NEW: Handle playback commands from host ---
+    if (audioElementRef.current) {
+      if (data.type === "play") {
+        if (typeof data.currentTime === "number") {
+          audioElementRef.current.setCurrentTime(data.currentTime);
+        }
+        audioElementRef.current.play().catch((err) => {
+          toast("Tap to enable audio playback", { icon: "🔊" });
+        });
+      } else if (data.type === "pause") {
+        audioElementRef.current.pause();
+      } else if (data.type === "seek") {
+        if (typeof data.currentTime === "number") {
+          audioElementRef.current.setCurrentTime(data.currentTime);
+        }
+      }
+    }
+    // Note: host_disconnect is now handled in useSyncService hook
   };
 
   // Handle audio sync from server
   const handleAudioSync = (data) => {
     console.log("Received audio sync:", data);
     try {
-      // Handle audio blob data
-      if (data.audioBlob) {
-        const audioBlob = new Blob([data.audioBlob], {
-          type: "audio/mpeg",
+      // Handle audio buffer data
+      if (data.audioBuffer) {
+        const audioBlob = new Blob([new Uint8Array(data.audioBuffer)], {
+          type: data.fileType || "audio/mpeg",
         });
         setAudioBlob(audioBlob);
         const url = URL.createObjectURL(audioBlob);
@@ -146,34 +221,36 @@ export default function ClientPage() {
     // Audio metadata loaded
   };
 
-  // Modern Audio Player Event Handlers (client has full control)
+  // Client Audio Player Event Handlers (client only controls volume/mute)
   const handlePlay = () => {
-    // Client can control their own playback
-    console.log("Client play event");
-    dispatch(setIsPlaying(true));
+    // Client cannot control play - this should be disabled
+    console.log("Client play event - ignored (host controlled)");
+    // Don't dispatch setIsPlaying - let host control it
   };
 
   const handlePause = () => {
-    // Client can control their own playback
-    console.log("Client pause event");
-    dispatch(setIsPlaying(false));
+    // Client cannot control pause - this should be disabled
+    console.log("Client pause event - ignored (host controlled)");
+    // Don't dispatch setIsPlaying - let host control it
   };
 
   const handleSeek = (time) => {
-    // Client can control their own seeking
-    console.log("Client seek event:", time);
-    dispatch(setCurrentTime(time));
+    // Client cannot control seek - this should be disabled
+    console.log("Client seek event - ignored (host controlled)");
+    // Don't dispatch setCurrentTime - let host control it
   };
 
   const handleVolumeChange = (volume) => {
     // Client can control their own volume
     console.log("Client volume changed:", volume);
+    // This is allowed - client controls their own volume
   };
 
   // Handle name submission
   const handleNameSubmit = (name) => {
     setUserName(name);
     localStorage.setItem(`audionize_user_${sessionCode}`, name);
+    setShowNameInput(false);
     setIsConnecting(true);
 
     // Simulate connection delay
@@ -184,20 +261,48 @@ export default function ClientPage() {
     }, 1000);
   };
 
-  // Set up message handler
+  // Handle manual disconnect
+  const handleDisconnect = () => {
+    if (window.confirm("Are you sure you want to leave this session?")) {
+      // Clear all state
+      dispatch(clearSync());
+      dispatch(clearSession());
+      dispatch(setAudioUrl(null));
+      dispatch(setAudioFile(null));
+
+      // Clear localStorage
+      if (sessionCode) {
+        localStorage.removeItem(`audionize_client_session_${sessionCode}`);
+        localStorage.removeItem(`audionize_user_${sessionCode}`);
+      }
+
+      // Redirect to home page
+      window.location.href = "/";
+    }
+  };
+
+  // Set up message handler only when we have all required data
   useEffect(() => {
     if (setMessageHandler && sessionCode && userName) {
       setMessageHandler(handleSync);
     }
   }, [setMessageHandler, sessionCode, userName]);
 
-  // Set up audio update handler
+  // Set up audio update handler only when we have all required data
   useEffect(() => {
-    if (setMessageHandler && sessionCode && userName) {
-      // This would be setAudioUpdateHandler if available
-      // For now, we'll handle audio sync in the main message handler
+    if (setAudioUpdateHandler && sessionCode && userName) {
+      setAudioUpdateHandler(handleAudioSync);
     }
-  }, [setMessageHandler, sessionCode, userName]);
+  }, [setAudioUpdateHandler, sessionCode, userName]);
+
+  // Set up client update handler only when we have all required data
+  useEffect(() => {
+    if (setClientUpdateHandler && sessionCode && userName) {
+      setClientUpdateHandler((data) => {
+        console.log("Client update:", data);
+      });
+    }
+  }, [setClientUpdateHandler, sessionCode, userName]);
 
   // Show loading if no session code
   if (!sessionCode) {
@@ -212,8 +317,8 @@ export default function ClientPage() {
     );
   }
 
-  // Show name input if no username
-  if (!userName) {
+  // Show name input if no username or if name input modal is active
+  if (!userName || showNameInput) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <NameInputModal
@@ -250,40 +355,87 @@ export default function ClientPage() {
           <p className="text-slate-400 text-sm">
             Connected as: <span className="font-medium">{userName}</span>
           </p>
+          <div className="mt-4">
+            <button
+              onClick={handleDisconnect}
+              disabled={hostDisconnected}
+              className={`px-4 py-2 rounded text-white text-sm font-medium transition-colors ${
+                hostDisconnected
+                  ? "bg-gray-500 cursor-not-allowed"
+                  : "bg-red-500 hover:bg-red-600"
+              }`}
+            >
+              {hostDisconnected ? "Redirecting..." : "Leave Session"}
+            </button>
+          </div>
         </div>
 
         {/* Connection Status */}
         <div className="flex justify-center mb-8">
-          <div
-            className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${
-              isConnected
-                ? "bg-green-500/20 text-green-300 border border-green-500/50"
-                : "bg-red-500/20 text-red-300 border border-red-500/50"
-            }`}
-          >
+          {hostDisconnected ? (
+            <div className="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-red-500/20 text-red-300 border border-red-500/50">
+              <div className="w-3 h-3 rounded-full mr-2 bg-red-400"></div>
+              Host Disconnected - Redirecting...
+            </div>
+          ) : (
             <div
-              className={`w-3 h-3 rounded-full mr-2 ${
-                isConnected ? "bg-green-400 animate-pulse" : "bg-red-400"
+              className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${
+                syncConnected
+                  ? "bg-green-500/20 text-green-300 border border-green-500/50"
+                  : "bg-red-500/20 text-red-300 border border-red-500/50"
               }`}
-            ></div>
-            {isConnected ? "Connected to Host" : "Disconnected"}
-          </div>
+            >
+              <div
+                className={`w-3 h-3 rounded-full mr-2 ${
+                  syncConnected ? "bg-green-400 animate-pulse" : "bg-red-400"
+                }`}
+              ></div>
+              {syncConnected ? "Connected to Host" : "Disconnected"}
+            </div>
+          )}
         </div>
 
         {/* Modern Audio Player */}
-        {audioUrl ? (
+        {audioUrl && !hostDisconnected ? (
           <div className="mb-8">
             <ModernAudioPlayer
+              ref={audioElementRef}
               audioUrl={audioUrl}
               onPlay={handlePlay}
               onPause={handlePause}
               onSeek={handleSeek}
               onVolumeChange={handleVolumeChange}
               isHost={false}
+              disabled={false}
             />
           </div>
+        ) : hostDisconnected ? (
+          <div className="text-center py-16 bg-red-900/20 backdrop-blur-md border border-red-500/30 rounded-2xl mb-8">
+            <div className="text-red-400 mb-6">
+              <svg
+                className="w-20 h-20 mx-auto mb-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                />
+              </svg>
+            </div>
+            <h3 className="text-2xl font-semibold text-red-300 mb-3">
+              Host Disconnected
+            </h3>
+            <p className="text-red-400 max-w-md mx-auto">
+              The host has left the session. You will be redirected to the home
+              page shortly.
+            </p>
+          </div>
         ) : (
-          <div className="text-center py-16 bg-slate-800/40 backdrop-blur-md border border-white/20 rounded-2xl">
+          <div className="text-center py-16 bg-slate-800/40 backdrop-blur-md border border-white/20 rounded-2xl mb-8">
             <div className="text-slate-400 mb-6">
               <svg
                 className="w-20 h-20 mx-auto mb-4"
@@ -304,8 +456,8 @@ export default function ClientPage() {
             </h3>
             <p className="text-slate-400 max-w-md mx-auto">
               The host will upload audio and start the session. You'll see the
-              music player here once they begin. You'll have full control over
-              play, pause, seek, and volume.
+              music player here once they begin. You can control your volume,
+              but playback is controlled by the host.
             </p>
           </div>
         )}
@@ -328,10 +480,18 @@ export default function ClientPage() {
               <span className="text-slate-300">Connection Status:</span>
               <span
                 className={`font-medium ${
-                  isConnected ? "text-green-400" : "text-red-400"
+                  hostDisconnected
+                    ? "text-red-400"
+                    : syncConnected
+                    ? "text-green-400"
+                    : "text-red-400"
                 }`}
               >
-                {isConnected ? "Connected" : "Disconnected"}
+                {hostDisconnected
+                  ? "Host Disconnected"
+                  : syncConnected
+                  ? "Connected"
+                  : "Disconnected"}
               </span>
             </div>
             <div className="flex justify-between">
@@ -346,7 +506,7 @@ export default function ClientPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-300">Player Control:</span>
-              <span className="text-blue-400 font-medium">Full Control</span>
+              <span className="text-blue-400 font-medium">Volume Only</span>
             </div>
           </div>
         </div>

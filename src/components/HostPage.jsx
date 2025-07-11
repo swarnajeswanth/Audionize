@@ -20,6 +20,8 @@ import {
   addConnectedClient,
   removeConnectedClient,
   addSyncMessage,
+  clearSync,
+  clearSession,
 } from "../store/slices/syncSlice";
 import { useSyncService } from "../hooks/useSyncService";
 import ModernAudioPlayer from "./ModernAudioPlayer";
@@ -95,25 +97,33 @@ export default function HostPage() {
     sendSeek,
     sendVolume,
     sendSyncAll,
+    isConnected: syncConnected, // <-- get real socket connection status
   } = useSyncService(sessionCode, "host", user?.name || "Host");
 
-  // Set up message handlers
+  // Set up sync service handlers
   useEffect(() => {
-    setMessageHandler(handleSync);
+    setMessageHandler((data) => {
+      console.log("Received message:", data);
+      if (data.type === "sync") {
+        dispatch(setSyncStatus("synced"));
+        toast.success("Audio synchronized with all clients");
+      }
+    });
+
     setClientUpdateHandler((data) => {
+      console.log("Client update:", data);
       if (data.type === "joined") {
         dispatch(
           addConnectedClient({
-            id: data.client.clientId,
-            name: data.client.clientName,
+            id: data.clientId,
+            name: data.clientName,
             joinedAt: new Date().toISOString(),
-            status: "connected",
           })
         );
-        toast.success(`${data.client.clientName} joined the session`);
+        toast.success(`${data.clientName} joined the session`);
       } else if (data.type === "left") {
         dispatch(removeConnectedClient(data.clientId));
-        toast.info("A client left the session");
+        toast.success("A client left the session");
       }
     });
   }, [setMessageHandler, setClientUpdateHandler, dispatch]);
@@ -134,9 +144,9 @@ export default function HostPage() {
         const blob = new Blob([file], { type: file.type });
         setAudioBlob(blob);
 
-        // Send audio to all clients
-        const arrayBuffer = await file.arrayBuffer();
-        sendAudio(arrayBuffer, file.name, file.size);
+        // Convert blob to ArrayBuffer and send with file type
+        const arrayBuffer = await blob.arrayBuffer();
+        sendAudio(arrayBuffer, file.name, file.size, file.type);
 
         toast.success("Audio uploaded and shared with clients");
       } catch (error) {
@@ -180,13 +190,104 @@ export default function HostPage() {
     toast.success("All clients synced to current position");
   };
 
+  // Handle manual session end
+  const handleEndSession = () => {
+    if (
+      window.confirm(
+        "Are you sure you want to end this session? All clients will be disconnected."
+      )
+    ) {
+      // Disconnect from sync service (this will trigger host_disconnect for all clients)
+      if (sessionCode) {
+        console.log("Host manually ending session");
+        // The sync service disconnect will handle room closure
+        // This will trigger host_disconnect event for all clients
+      }
+
+      // Clear local state
+      dispatch(clearSync());
+      dispatch(clearSession());
+
+      // Clear localStorage
+      localStorage.removeItem("audionize_host_session");
+
+      // Redirect to home page
+      window.location.href = "/";
+    }
+  };
+
   // Initialize connection
   useEffect(() => {
     if (sessionCode) {
-      dispatch(setConnected(true));
-      dispatch(setSyncStatus("connected"));
+      // Store session info in localStorage for persistence
+      localStorage.setItem(
+        "audionize_host_session",
+        JSON.stringify({
+          sessionCode,
+          userName: user?.name || "Host",
+          timestamp: Date.now(),
+        })
+      );
+    }
+  }, [sessionCode, dispatch, user?.name]);
+
+  // Check for existing session on page load (for page refresh recovery)
+  useEffect(() => {
+    if (!sessionCode) {
+      // Try to recover session from localStorage
+      const storedSession = localStorage.getItem("audionize_host_session");
+      if (storedSession) {
+        try {
+          const sessionData = JSON.parse(storedSession);
+          // Check if session is not too old (within last 24 hours)
+          const sessionAge = Date.now() - sessionData.timestamp;
+          if (sessionAge < 24 * 60 * 60 * 1000) {
+            dispatch(setSessionCode(sessionData.sessionCode));
+            toast.success("Host session restored from previous connection");
+          } else {
+            // Session too old, clear it
+            localStorage.removeItem("audionize_host_session");
+          }
+        } catch (error) {
+          console.error("Error parsing stored session:", error);
+          localStorage.removeItem("audionize_host_session");
+        }
+      }
     }
   }, [sessionCode, dispatch]);
+
+  // Cleanup on unmount - close room and disconnect all clients
+  useEffect(() => {
+    return () => {
+      // Clear session from localStorage
+      localStorage.removeItem("audionize_host_session");
+
+      // Disconnect from sync service (this will close the room)
+      if (sessionCode) {
+        console.log("Host disconnecting - closing room");
+        // The sync service disconnect will handle room closure
+        // This will trigger host_disconnect event for all clients
+      }
+    };
+  }, [sessionCode]);
+
+  // Handle page unload/refresh with confirmation
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (sessionCode && connectedClients.length > 0) {
+        // Show confirmation dialog
+        e.preventDefault();
+        e.returnValue =
+          "Are you sure you want to leave? This will disconnect all clients and end the session.";
+        return "Are you sure you want to leave? This will disconnect all clients and end the session.";
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [sessionCode, connectedClients.length]);
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -231,6 +332,14 @@ export default function HostPage() {
                 {connectedClients.length} Client
                 {connectedClients.length !== 1 ? "s" : ""}
               </div>
+            </div>
+            <div className="mt-2">
+              <button
+                onClick={handleEndSession}
+                className="bg-red-500 hover:bg-red-600 px-4 py-2 rounded text-white text-sm font-medium transition-colors"
+              >
+                End Session
+              </button>
             </div>
           </div>
         </div>
@@ -281,6 +390,7 @@ export default function HostPage() {
               onSeek={handleSeek}
               onVolumeChange={handleVolumeChange}
               isHost={true}
+              disabled={!syncConnected} // <-- Only enable controls when socket is connected
             />
 
             {/* Sync Button */}
@@ -324,9 +434,9 @@ export default function HostPage() {
           <div className="bg-slate-700/30 p-4 rounded-lg">
             <h3 className="font-semibold mb-3">Connected Clients</h3>
             <div className="space-y-2">
-              {connectedClients.map((client) => (
+              {connectedClients.map((client, index) => (
                 <div
-                  key={client.id}
+                  key={client.id || `client-${index}`}
                   className="flex items-center justify-between p-3 bg-slate-600/30 rounded-lg border border-slate-500/20"
                 >
                   <div className="flex items-center gap-3">

@@ -122,17 +122,30 @@ class SyncService {
     this.socket.on("error", (error) => {
       console.error("Sync service error:", error);
     });
+
+    // Handle host disconnection
+    this.socket.on("host_disconnect", (data) => {
+      console.log("Host disconnected - room closed:", data);
+      if (this.onMessageCallback) {
+        this.onMessageCallback({
+          type: "host_disconnect",
+          message: "Host has disconnected. Room closed.",
+          ...data,
+        });
+      }
+    });
   }
 
   // Send audio file to clients
-  sendAudio(audioBlob, fileName, fileSize) {
+  sendAudio(audioBuffer, fileName, fileSize, fileType) {
     if (this.socket && this.isConnected) {
       console.log("Sending audio to clients:", { fileName, fileSize });
       this.socket.emit("audio_upload", {
         sessionCode: this.sessionCode,
-        audioBlob,
+        audioBuffer, // ArrayBuffer
         fileName,
         fileSize,
+        fileType, // pass the type
         timestamp: Date.now(),
       });
     } else {
@@ -226,10 +239,22 @@ class SyncService {
 
   // Disconnect
   disconnect() {
-    if (this.socket) {
+    if (this.socket && this.isConnected) {
+      // If this is a host disconnecting, emit room closure event
+      if (this.role === "host") {
+        console.log("Host disconnecting - closing room for all clients");
+        this.socket.emit("host_disconnect", {
+          sessionCode: this.sessionCode,
+          timestamp: Date.now(),
+        });
+      }
+
       this.socket.disconnect();
       this.socket = null;
       this.isConnected = false;
+      this.sessionCode = null;
+      this.role = null;
+      this.userName = null;
     }
   }
 

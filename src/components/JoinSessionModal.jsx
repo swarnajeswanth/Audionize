@@ -1,11 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AnimatedModal from "./AnimatedModal";
 import { useAppDispatch } from "../store/hooks";
 import { setSessionCode, setIsClient } from "../store/slices/sessionSlice";
 import { setConnected, setSyncStatus } from "../store/slices/syncSlice";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { useSyncService } from "../hooks/useSyncService";
 
 export default function JoinSessionModal({
   isOpen,
@@ -17,6 +18,13 @@ export default function JoinSessionModal({
   const [isJoining, setIsJoining] = useState(false);
   const dispatch = useAppDispatch();
   const router = useRouter();
+
+  // Connect to sync service when we have session code and username
+  const syncService = useSyncService(
+    sessionCode || "",
+    userName ? "client" : "",
+    userName || ""
+  );
 
   const handleJoin = async (e) => {
     e.preventDefault();
@@ -40,10 +48,39 @@ export default function JoinSessionModal({
       dispatch(setConnected(true));
       dispatch(setSyncStatus("connecting"));
 
-      // Store user name in localStorage for this session
-      localStorage.setItem(`audionize_user_${sessionCode}`, userName);
+      // Store username in localStorage for this session
+      localStorage.setItem(
+        `audionize_user_${sessionCode.trim()}`,
+        userName.trim()
+      );
+
+      // Store client session info in localStorage for persistence
+      localStorage.setItem(
+        `audionize_client_session_${sessionCode.trim()}`,
+        JSON.stringify({
+          sessionCode: sessionCode.trim(),
+          userName: userName.trim(),
+          timestamp: Date.now(),
+        })
+      );
 
       toast.success("Joining session...");
+
+      // Wait for sync service to connect and join room
+      let attempts = 0;
+      const maxAttempts = 10;
+
+      while (attempts < maxAttempts) {
+        if (syncService.isConnected) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        attempts++;
+      }
+
+      if (!syncService.isConnected) {
+        throw new Error("Failed to connect to session");
+      }
 
       // Close modal and redirect to client view
       onClose();
@@ -130,6 +167,12 @@ export default function JoinSessionModal({
         </div>
 
         <div className="flex justify-end space-x-3 pt-4">
+          {isJoining && (
+            <div className="flex items-center text-blue-400 text-sm">
+              <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mr-2"></div>
+              Connecting to session...
+            </div>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -152,7 +195,7 @@ export default function JoinSessionModal({
                 : "bg-blue-600 hover:bg-blue-700 text-white"
             }`}
           >
-            {isJoining ? "Joining..." : "Join Session"}
+            {isJoining ? "Connecting to Session..." : "Join Session"}
           </button>
         </div>
       </form>

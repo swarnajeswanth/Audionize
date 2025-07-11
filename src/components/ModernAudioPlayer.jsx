@@ -1,5 +1,11 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import {
   setCurrentTime,
@@ -7,15 +13,18 @@ import {
   setIsPlaying,
 } from "../store/slices/audioSlice";
 
-export default function ModernAudioPlayer({
-  audioUrl,
-  onPlay,
-  onPause,
-  onSeek,
-  onVolumeChange,
-  isHost = false,
-  disabled = false,
-}) {
+const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
+  {
+    audioUrl,
+    onPlay,
+    onPause,
+    onSeek,
+    onVolumeChange,
+    isHost = false,
+    disabled = false,
+  },
+  ref
+) {
   const dispatch = useAppDispatch();
   const { currentTime, duration, isPlaying } = useAppSelector(
     (state) => state.audio
@@ -25,6 +34,18 @@ export default function ModernAudioPlayer({
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const [isProgressHovered, setIsProgressHovered] = useState(false);
   const audioRef = useRef(null);
+
+  // Expose imperative methods to parent
+  useImperativeHandle(ref, () => ({
+    play: () => audioRef.current && audioRef.current.play(),
+    pause: () => audioRef.current && audioRef.current.pause(),
+    setCurrentTime: (t) => {
+      if (audioRef.current) audioRef.current.currentTime = t;
+    },
+    get audio() {
+      return audioRef.current;
+    },
+  }));
 
   // Handle time update
   const handleTimeUpdate = () => {
@@ -43,7 +64,7 @@ export default function ModernAudioPlayer({
 
   // Handle play/pause
   const handlePlayPause = () => {
-    if (!audioRef.current || disabled) return;
+    if (!audioRef.current || disabled || !isHost) return;
 
     if (isPlaying) {
       audioRef.current.pause();
@@ -60,7 +81,7 @@ export default function ModernAudioPlayer({
 
   // Handle seek
   const handleSeek = (e) => {
-    if (!audioRef.current || disabled) return;
+    if (!audioRef.current || disabled || !isHost) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -112,14 +133,20 @@ export default function ModernAudioPlayer({
         {/* Play/Pause Button */}
         <button
           onClick={handlePlayPause}
-          disabled={disabled || !audioUrl}
+          disabled={disabled || !audioUrl || !isHost}
           className={`relative group ${
-            disabled || !audioUrl
+            disabled || !audioUrl || !isHost
               ? "opacity-50 cursor-not-allowed"
               : "hover:scale-105 transition-transform"
           }`}
         >
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
+          <div
+            className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg ${
+              isHost
+                ? "bg-gradient-to-br from-blue-500 to-purple-600"
+                : "bg-gradient-to-br from-slate-600 to-slate-700"
+            }`}
+          >
             {isPlaying ? (
               <svg
                 className="w-8 h-8 text-white"
@@ -149,7 +176,7 @@ export default function ModernAudioPlayer({
               {audioUrl ? "Now Playing" : "No Audio"}
             </h3>
             <p className="text-slate-400 text-sm">
-              {isHost ? "Host Controls" : "Client Mode"}
+              {isHost ? "Host Controls" : "Client Mode - Volume Only"}
             </p>
           </div>
         </div>
@@ -219,8 +246,12 @@ export default function ModernAudioPlayer({
       {/* Progress Bar */}
       <div className="mb-4">
         <div
-          className="relative h-2 bg-slate-700/50 rounded-full cursor-pointer overflow-hidden"
-          onClick={handleSeek}
+          className={`relative h-2 rounded-full overflow-hidden ${
+            isHost && !disabled && audioUrl
+              ? "cursor-pointer"
+              : "cursor-not-allowed opacity-60"
+          }`}
+          onClick={isHost ? handleSeek : undefined}
           onMouseEnter={() => setIsProgressHovered(true)}
           onMouseLeave={() => setIsProgressHovered(false)}
         >
@@ -236,7 +267,7 @@ export default function ModernAudioPlayer({
           {/* Progress Glow */}
           <div
             className={`absolute top-0 left-0 h-full bg-gradient-to-r from-blue-400 to-purple-500 rounded-full blur-sm transition-all duration-300 ${
-              isProgressHovered ? "opacity-50" : "opacity-0"
+              isProgressHovered && isHost ? "opacity-50" : "opacity-0"
             }`}
             style={{ width: `${progressPercentage}%` }}
           ></div>
@@ -244,7 +275,7 @@ export default function ModernAudioPlayer({
           {/* Progress Handle */}
           <div
             className={`absolute top-1/2 w-4 h-4 bg-white rounded-full shadow-lg transform -translate-y-1/2 transition-all duration-300 ${
-              isProgressHovered ? "scale-125" : "scale-100"
+              isProgressHovered && isHost ? "scale-125" : "scale-100"
             }`}
             style={{ left: `calc(${progressPercentage}% - 8px)` }}
           ></div>
@@ -282,4 +313,6 @@ export default function ModernAudioPlayer({
       </div>
     </div>
   );
-}
+});
+
+export default ModernAudioPlayer;
