@@ -144,6 +144,32 @@ export const useSyncService = (
     return () => {};
   }, [sessionCode, role, userName, dispatch, onHostDisconnect]);
 
+  // Listen for socket connect/disconnect and update Redux state
+  useEffect(() => {
+    if (syncService.socket) {
+      const handleConnect = () => {
+        dispatch(setConnected(true));
+        dispatch(setSyncStatus("connected"));
+      };
+      const handleDisconnect = () => {
+        dispatch(setConnected(false));
+        dispatch(setSyncStatus("disconnected"));
+      };
+      syncService.socket.on("connect", handleConnect);
+      syncService.socket.on("disconnect", handleDisconnect);
+      // Initial state
+      if (syncService.getConnectionStatus()) {
+        handleConnect();
+      } else {
+        handleDisconnect();
+      }
+      return () => {
+        syncService.socket.off("connect", handleConnect);
+        syncService.socket.off("disconnect", handleDisconnect);
+      };
+    }
+  }, [dispatch, syncService.socket]);
+
   // Set up message handlers
   const setMessageHandler = useCallback((handler) => {
     syncService.setOnMessage(handler);
