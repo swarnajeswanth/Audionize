@@ -76,6 +76,20 @@ io.on("connection", (socket) => {
   });
 });
 
+// Health check endpoints for Render
+server.on("request", (req, res) => {
+  if (req.url === "/") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Server is running!");
+  } else if (req.url === "/healthz") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("OK");
+  } else {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("Not Found");
+  }
+});
+
 server.listen(4000, () => {
   // Server started successfully
 });
