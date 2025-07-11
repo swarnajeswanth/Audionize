@@ -9,6 +9,12 @@
   package = "@netlify/plugin-nextjs"
 
 [[redirects]]
+  from = "/api/auth/*"
+  to = "/api/auth/[...nextauth]"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
