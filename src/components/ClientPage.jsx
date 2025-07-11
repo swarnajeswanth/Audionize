@@ -41,6 +41,7 @@ export default function ClientPage() {
   const [hostDisconnected, setHostDisconnected] = useState(false);
 
   const audioElementRef = useRef(null);
+  const pendingSyncCommands = useRef([]);
 
   // Get session code from URL
   const urlCode = searchParams.get("code");
@@ -141,7 +142,8 @@ export default function ClientPage() {
     console.log("Received sync command:", data);
 
     if (!audioElementRef.current?.audio) {
-      console.warn("Audio element not ready for sync");
+      console.warn("Audio element not ready for sync, queueing command");
+      pendingSyncCommands.current.push(data);
       return;
     }
 
@@ -285,6 +287,11 @@ export default function ClientPage() {
   // Handle loaded metadata
   const handleLoadedMetadata = () => {
     // Audio metadata loaded
+    // Process any queued sync commands
+    while (pendingSyncCommands.current.length > 0) {
+      const cmd = pendingSyncCommands.current.shift();
+      handleSync(cmd);
+    }
   };
 
   // Client Audio Player Event Handlers (client only controls volume/mute)
@@ -481,6 +488,7 @@ export default function ClientPage() {
               onVolumeChange={handleVolumeChange}
               isHost={false}
               disabled={false}
+              onLoadedMetadata={handleLoadedMetadata}
             />
           </div>
         ) : hostDisconnected ? (
