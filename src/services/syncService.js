@@ -10,6 +10,13 @@ class SyncService {
     this.onClientUpdateCallback = null;
     this.onAudioUpdateCallback = null;
     this.isConnected = false;
+
+    // Enhanced sync properties
+    this.networkLatency = 0;
+    this.clockOffset = 0;
+    this.syncTolerance = 100; // milliseconds
+    this.lastPingTime = 0;
+    this.pingInterval = null;
   }
 
   connect(sessionCode, role, userName) {
@@ -33,6 +40,9 @@ class SyncService {
     this.socket.on("connect", () => {
       console.log("Connected to sync server");
       this.isConnected = true;
+
+      // Start ping-pong for latency measurement
+      this.startLatencyMeasurement();
 
       // Join the session
       this.socket.emit("join", {
@@ -134,6 +144,43 @@ class SyncService {
         });
       }
     });
+
+    // Add latency measurement handler
+    this.socket.on("pong", (data) => {
+      const now = Date.now();
+      const roundTripTime = now - data.sentTime;
+      this.networkLatency = roundTripTime / 2; // One-way latency
+      this.clockOffset = data.serverTime - (now - this.networkLatency);
+      console.log(
+        `Network latency: ${this.networkLatency}ms, Clock offset: ${this.clockOffset}ms`
+      );
+    });
+  }
+
+  // Start periodic latency measurement
+  startLatencyMeasurement() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+    }
+
+    this.pingInterval = setInterval(() => {
+      if (this.socket && this.isConnected) {
+        this.socket.emit("ping", { sentTime: Date.now() });
+      }
+    }, 5000); // Ping every 5 seconds
+  }
+
+  // Get synchronized timestamp
+  getSyncTimestamp() {
+    return Date.now() + this.clockOffset;
+  }
+
+  // Calculate optimal play delay based on network conditions
+  calculatePlayDelay() {
+    const baseDelay = 1000; // 1 second base delay
+    const latencyBuffer = this.networkLatency * 2; // Double the latency for safety
+    const jitterBuffer = 200; // Additional buffer for network jitter
+    return Math.max(baseDelay, latencyBuffer + jitterBuffer);
   }
 
   // Send audio file to clients
@@ -153,26 +200,39 @@ class SyncService {
     }
   }
 
-  // Send play command to clients
-  sendPlay(currentTime = 0) {
+  // Enhanced play command with better timing
+  sendPlay(scheduledTime = 0, currentTime = 0) {
     if (this.socket && this.isConnected) {
-      console.log("Sending play command:", { currentTime });
+      const playDelay = this.calculatePlayDelay();
+      const actualScheduledTime =
+        scheduledTime || this.getSyncTimestamp() + playDelay;
+
+      console.log("Sending play command:", {
+        scheduledTime: actualScheduledTime,
+        currentTime,
+        playDelay,
+        networkLatency: this.networkLatency,
+      });
+
       this.socket.emit("play_command", {
         sessionCode: this.sessionCode,
+        scheduledTime: actualScheduledTime,
         currentTime: currentTime,
-        timestamp: Date.now(),
+        timestamp: this.getSyncTimestamp(),
+        networkLatency: this.networkLatency,
       });
     } else {
       console.error("Cannot send play command: socket not connected");
     }
   }
 
-  // Send pause command to clients
-  sendPause() {
+  // Send pause command to clients (with currentTime for sync)
+  sendPause(currentTime = 0) {
     if (this.socket && this.isConnected) {
-      console.log("Sending pause command");
+      console.log("Sending pause command:", { currentTime });
       this.socket.emit("pause_command", {
         sessionCode: this.sessionCode,
+        currentTime: currentTime,
         timestamp: Date.now(),
       });
     } else {
@@ -239,6 +299,11 @@ class SyncService {
 
   // Disconnect
   disconnect() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+
     if (this.socket && this.isConnected) {
       // If this is a host disconnecting, emit room closure event
       if (this.role === "host") {

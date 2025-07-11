@@ -5,6 +5,7 @@ import {
   useSession as useSessionStore,
   useSync,
   useAppDispatch,
+  useAppSelector,
 } from "../store/hooks";
 import { generateSessionCode } from "../store/slices/sessionSlice";
 import {
@@ -32,6 +33,7 @@ export default function HostPage() {
   const { user, isAuthenticated } = useAuth();
   const { sessionCode } = useSessionStore();
   const { isConnected, connectedClients } = useSync();
+  const { currentTime, isPlaying } = useAppSelector((state) => state.audio); // <-- get currentTime and isPlaying
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [audioFile, setAudioFileState] = useState(null);
   const [audioUrl, setAudioUrlState] = useState(null);
@@ -98,6 +100,7 @@ export default function HostPage() {
     sendVolume,
     sendSyncAll,
     isConnected: syncConnected, // <-- get real socket connection status
+    sendTimeUpdate, // <-- Add sendTimeUpdate to the hook
   } = useSyncService(sessionCode, "host", user?.name || "Host");
 
   // Set up sync service handlers
@@ -128,6 +131,16 @@ export default function HostPage() {
     });
   }, [setMessageHandler, setClientUpdateHandler, dispatch]);
 
+  // Periodically broadcast host time for drift correction
+  useEffect(() => {
+    if (isPlaying && syncConnected) {
+      const interval = setInterval(() => {
+        sendTimeUpdate(currentTime);
+      }, 2000); // every 2 seconds
+      return () => clearInterval(interval);
+    }
+  }, [isPlaying, syncConnected, currentTime, sendTimeUpdate]);
+
   // Audio upload handler
   const handleAudioUpload = async (e) => {
     const file = e.target.files[0];
@@ -156,17 +169,43 @@ export default function HostPage() {
     }
   };
 
-  // Modern Audio Player Event Handlers
+  // Enhanced Audio Player Event Handlers with better timing
   const handlePlay = () => {
-    sendPlay();
+    if (!syncConnected) {
+      toast.error("Not connected to sync server yet. Please wait.");
+      return;
+    }
+
+    // Use the enhanced sync service timing
+    const scheduledTime = Date.now() + 1000; // 1 second delay
+    sendPlay(scheduledTime, currentTime);
+
+    // Update local state immediately for responsive UI
+    dispatch(setIsPlaying(true));
   };
 
   const handlePause = () => {
-    sendPause();
+    if (!syncConnected) {
+      toast.error("Not connected to sync server yet. Please wait.");
+      return;
+    }
+
+    sendPause(currentTime);
+
+    // Update local state immediately for responsive UI
+    dispatch(setIsPlaying(false));
   };
 
   const handleSeek = (time) => {
+    if (!syncConnected) {
+      toast.error("Not connected to sync server yet. Please wait.");
+      return;
+    }
+
     sendSeek(time);
+
+    // Update local state immediately for responsive UI
+    dispatch(setCurrentTime(time));
   };
 
   const handleVolumeChange = (volume) => {
@@ -184,9 +223,14 @@ export default function HostPage() {
     toast.info("Client disconnect functionality coming soon");
   };
 
-  // Sync all clients to current position
+  // Enhanced sync all clients to current position
   const handleSyncMusic = () => {
-    sendSyncAll();
+    if (!syncConnected) {
+      toast.error("Not connected to sync server yet. Please wait.");
+      return;
+    }
+
+    sendSyncAll(currentTime);
     toast.success("All clients synced to current position");
   };
 

@@ -24,6 +24,7 @@ import { useSyncService } from "../hooks/useSyncService";
 import ModernAudioPlayer from "./ModernAudioPlayer";
 import NameInputModal from "./NameInputModal";
 import LoadingState from "./LoadingState";
+import BlueDots from "./BlueDots";
 import toast from "react-hot-toast";
 
 export default function ClientPage() {
@@ -141,46 +142,117 @@ export default function ClientPage() {
     };
   }, [sessionCode]);
 
-  // Handle sync messages from host
+  // Enhanced sync handler with precise timing
   const handleSync = (data) => {
-    console.log("Received sync data:", data);
+    console.log("Received sync command:", data);
 
-    if (data.type === "audio_uploaded" && data.audioBuffer) {
-      // Host uploaded new audio
-      try {
-        // Convert the received ArrayBuffer to a proper blob
-        const audioBlob = new Blob([new Uint8Array(data.audioBuffer)], {
-          type: data.fileType || "audio/mpeg",
-        });
-        setAudioBlob(audioBlob);
-        const url = URL.createObjectURL(audioBlob);
-        dispatch(setAudioUrl(url));
-        dispatch(setAudioFile(audioBlob));
-        toast.success("New audio received from host");
-      } catch (error) {
-        console.error("Error processing audio:", error);
-        toast.error("Failed to load audio from host");
-      }
+    if (!audioElementRef.current?.audio) {
+      console.warn("Audio element not ready for sync");
+      return;
     }
 
-    // --- NEW: Handle playback commands from host ---
-    if (audioElementRef.current) {
-      if (data.type === "play") {
-        if (typeof data.currentTime === "number") {
-          audioElementRef.current.setCurrentTime(data.currentTime);
-        }
-        audioElementRef.current.play().catch((err) => {
-          toast("Tap to enable audio playback", { icon: "🔊" });
-        });
-      } else if (data.type === "pause") {
-        audioElementRef.current.pause();
-      } else if (data.type === "seek") {
-        if (typeof data.currentTime === "number") {
-          audioElementRef.current.setCurrentTime(data.currentTime);
-        }
-      }
+    const audio = audioElementRef.current.audio;
+    const now = Date.now();
+
+    switch (data.type) {
+      case "play":
+        handlePlaySync(data, now, audio);
+        break;
+      case "pause":
+        handlePauseSync(data, now, audio);
+        break;
+      case "seek":
+        handleSeekSync(data, now, audio);
+        break;
+      case "volume":
+        handleVolumeSync(data, audio);
+        break;
+      case "sync_all":
+        handleSyncAll(data, now, audio);
+        break;
+      default:
+        console.log("Unknown sync command:", data.type);
     }
-    // Note: host_disconnect is now handled in useSyncService hook
+  };
+
+  // Precise play synchronization
+  const handlePlaySync = (data, now, audio) => {
+    const { scheduledTime, currentTime, networkLatency } = data;
+
+    if (scheduledTime) {
+      const timeUntilPlay = scheduledTime - now;
+
+      if (timeUntilPlay > 0) {
+        // Schedule play for future time
+        console.log(`Scheduling play in ${timeUntilPlay}ms`);
+        setTimeout(() => {
+          audio.currentTime = currentTime;
+          audio.play().catch((error) => {
+            console.error("Error playing audio:", error);
+          });
+          dispatch(setIsPlaying(true));
+          dispatch(setCurrentTime(currentTime));
+        }, timeUntilPlay);
+      } else {
+        // Play immediately if scheduled time has passed
+        console.log("Scheduled time passed, playing immediately");
+        audio.currentTime = currentTime;
+        audio.play().catch((error) => {
+          console.error("Error playing audio:", error);
+        });
+        dispatch(setIsPlaying(true));
+        dispatch(setCurrentTime(currentTime));
+      }
+    } else {
+      // Fallback to immediate play
+      audio.currentTime = currentTime;
+      audio.play().catch((error) => {
+        console.error("Error playing audio:", error);
+      });
+      dispatch(setIsPlaying(true));
+      dispatch(setCurrentTime(currentTime));
+    }
+  };
+
+  // Precise pause synchronization
+  const handlePauseSync = (data, now, audio) => {
+    const { currentTime } = data;
+
+    audio.pause();
+    audio.currentTime = currentTime;
+    dispatch(setIsPlaying(false));
+    dispatch(setCurrentTime(currentTime));
+  };
+
+  // Precise seek synchronization
+  const handleSeekSync = (data, now, audio) => {
+    const { currentTime } = data;
+
+    audio.currentTime = currentTime;
+    dispatch(setCurrentTime(currentTime));
+  };
+
+  // Volume synchronization
+  const handleVolumeSync = (data, audio) => {
+    const { volume } = data;
+    audio.volume = volume;
+  };
+
+  // Sync all clients to current position
+  const handleSyncAll = (data, now, audio) => {
+    const { currentTime } = data;
+
+    if (audio.paused) {
+      audio.currentTime = currentTime;
+      dispatch(setCurrentTime(currentTime));
+    } else {
+      // If playing, schedule a precise sync
+      const syncDelay = 100; // Small delay for sync
+      setTimeout(() => {
+        audio.currentTime = currentTime;
+        dispatch(setCurrentTime(currentTime));
+      }, syncDelay);
+    }
   };
 
   // Handle audio sync from server
@@ -345,7 +417,8 @@ export default function ClientPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      <div className="max-w-4xl mx-auto p-6">
+      <BlueDots />
+      <div className="content-layer max-w-4xl mx-auto p-6">
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Client Session</h1>

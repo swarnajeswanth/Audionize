@@ -20,10 +20,21 @@ export const useSyncService = (
   sessionCode,
   role,
   userName,
-  onHostDisconnect = null
+  onHostDisconnect = null,
+  syncConfig = {}
 ) => {
   const isConnectedRef = React.useRef(false);
   const dispatch = useAppDispatch();
+
+  // Default sync configuration
+  const defaultConfig = {
+    syncTolerance: 100, // milliseconds
+    playDelay: 1000, // milliseconds
+    driftCorrectionThreshold: 0.1, // seconds
+    pingInterval: 5000, // milliseconds
+    maxLatency: 500, // milliseconds
+    ...syncConfig,
+  };
 
   // Connect to sync service
   useEffect(() => {
@@ -33,7 +44,13 @@ export const useSyncService = (
           sessionCode,
           role,
           userName,
+          config: defaultConfig,
         });
+
+        // Apply sync configuration
+        syncService.syncTolerance = defaultConfig.syncTolerance;
+        syncService.pingInterval = defaultConfig.pingInterval;
+
         syncService.connect(sessionCode, role, userName);
         isConnectedRef.current = true;
       } catch (error) {
@@ -49,7 +66,7 @@ export const useSyncService = (
         isConnectedRef.current = false;
       }
     };
-  }, [sessionCode, role, userName]);
+  }, [sessionCode, role, userName, defaultConfig]);
 
   // Handle room-full event - always call useEffect
   useEffect(() => {
@@ -141,12 +158,12 @@ export const useSyncService = (
     syncService.sendAudio(audioBuffer, fileName, fileSize, fileType);
   }, []);
 
-  const sendPlay = useCallback((currentTime = 0) => {
-    syncService.sendPlay(currentTime);
+  const sendPlay = useCallback((scheduledTime = 0, currentTime = 0) => {
+    syncService.sendPlay(scheduledTime, currentTime);
   }, []);
 
-  const sendPause = useCallback(() => {
-    syncService.sendPause();
+  const sendPause = useCallback((currentTime = 0) => {
+    syncService.sendPause(currentTime);
   }, []);
 
   const sendSeek = useCallback((currentTime) => {

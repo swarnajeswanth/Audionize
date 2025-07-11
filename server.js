@@ -88,6 +88,14 @@ wss.on("connection", (ws) => {
 io.on("connection", (socket) => {
   console.log("Socket.IO client connected:", socket.id);
 
+  // Handle ping for latency measurement
+  socket.on("ping", (data) => {
+    socket.emit("pong", {
+      sentTime: data.sentTime,
+      serverTime: Date.now(),
+    });
+  });
+
   socket.on("join", ({ session, role, name }) => {
     socket.session = session;
     socket.role = role;

@@ -35,30 +35,69 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
   const [isProgressHovered, setIsProgressHovered] = useState(false);
   const audioRef = useRef(null);
 
+  // Enhanced sync properties
+  const [driftCorrection, setDriftCorrection] = useState(0);
+  const [lastSyncTime, setLastSyncTime] = useState(0);
+  const syncIntervalRef = useRef(null);
+
   // Expose imperative methods to parent
   useImperativeHandle(ref, () => ({
     play: () => audioRef.current && audioRef.current.play(),
     pause: () => audioRef.current && audioRef.current.pause(),
     setCurrentTime: (t) => {
-      if (audioRef.current) audioRef.current.currentTime = t;
+      if (audioRef.current) {
+        audioRef.current.currentTime = t;
+        setLastSyncTime(Date.now());
+      }
     },
     get audio() {
       return audioRef.current;
     },
+    // Enhanced methods for sync
+    getCurrentTime: () => audioRef.current?.currentTime || 0,
+    getDriftCorrection: () => driftCorrection,
+    setDriftCorrection: (correction) => setDriftCorrection(correction),
   }));
 
-  // Handle time update
+  // Handle time update with drift correction
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       const time = audioRef.current.currentTime;
-      dispatch(setCurrentTime(time));
+      const correctedTime = time + driftCorrection;
+      dispatch(setCurrentTime(correctedTime));
     }
   };
+
+  // Periodic drift correction for clients
+  useEffect(() => {
+    if (!isHost && audioRef.current && isPlaying) {
+      syncIntervalRef.current = setInterval(() => {
+        // Check for drift every 5 seconds
+        const expectedTime = (Date.now() - lastSyncTime) / 1000;
+        const actualTime = audioRef.current.currentTime;
+        const drift = actualTime - expectedTime;
+
+        if (Math.abs(drift) > 0.1) {
+          // Correct if drift > 100ms
+          console.log(`Correcting drift: ${drift.toFixed(3)}s`);
+          audioRef.current.currentTime = expectedTime;
+          setDriftCorrection(0);
+        }
+      }, 5000);
+    }
+
+    return () => {
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+      }
+    };
+  }, [isHost, isPlaying, lastSyncTime]);
 
   // Handle loaded metadata
   const handleLoadedMetadata = () => {
     if (audioRef.current) {
       dispatch(setDuration(audioRef.current.duration));
+      setLastSyncTime(Date.now());
     }
   };
 
@@ -126,6 +165,13 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
         onPause={() => dispatch(setIsPlaying(false))}
         onError={(e) => console.error("Audio error:", e)}
         preload="metadata"
+        // Enhanced audio settings for better sync
+        crossOrigin="anonymous"
+        // Reduce buffer size for lower latency
+        style={{
+          // Custom audio settings for better performance
+          willChange: "auto",
+        }}
       />
 
       {/* Main Player Controls */}
