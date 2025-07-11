@@ -313,7 +313,7 @@ class SyncService {
       if (this.onClientUpdateCallback) {
         this.onClientUpdateCallback({
           type: "left",
-          clientId: data.id,
+          clientId: data.id, // always use data.id
         });
       }
     });

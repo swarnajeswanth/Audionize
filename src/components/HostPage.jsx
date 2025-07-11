@@ -369,17 +369,17 @@ export default function HostPage() {
           <div className="text-right">
             <div
               className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                isConnected
+                syncConnected
                   ? "bg-green-500/30 text-green-300 border border-green-500/50"
                   : "bg-red-500/30 text-red-300 border border-red-500/50"
               }`}
             >
               <div
                 className={`w-2 h-2 rounded-full mr-2 ${
-                  isConnected ? "bg-green-400 animate-pulse" : "bg-red-400"
+                  syncConnected ? "bg-green-400 animate-pulse" : "bg-red-400"
                 }`}
               ></div>
-              {isConnected ? "Connected" : "Disconnected"}
+              {syncConnected ? "Connected" : "Disconnected"}
             </div>
             <div className="mt-2">
               <div

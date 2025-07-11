@@ -111,10 +111,6 @@ export default function ClientPage() {
   // Initialize connection
   useEffect(() => {
     if (sessionCode && userName) {
-      dispatch(setConnected(true));
-      dispatch(setSyncStatus("connected"));
-
-      // Store client session info in localStorage for persistence
       localStorage.setItem(
         `audionize_client_session_${sessionCode}`,
         JSON.stringify({
@@ -124,7 +120,7 @@ export default function ClientPage() {
         })
       );
     }
-  }, [sessionCode, userName, dispatch]);
+  }, [sessionCode, userName]);
 
   // Cleanup on unmount
   useEffect(() => {
