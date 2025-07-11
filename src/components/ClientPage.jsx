@@ -14,6 +14,7 @@ import {
   setCurrentTime,
   setDuration,
   setAudioFile,
+  setIsPlaying,
 } from "../store/slices/audioSlice";
 import { useSyncService } from "../hooks/useSyncService";
 import LoadingState from "./LoadingState";
@@ -54,17 +55,28 @@ export default function ClientPage() {
   const handleSync = (data) => {
     console.log("Received sync data:", data);
 
-    if (data.type === "audio_upload") {
+    if (data.type === "audio_uploaded") {
       // Host uploaded new audio
-      setAudioBlob(data.audioBlob);
-      const url = URL.createObjectURL(new Blob([data.audioBlob]));
-      dispatch(setAudioUrl(url));
-      toast.success("New audio received from host");
+      try {
+        // Convert the received data to a proper blob
+        const audioBlob = new Blob([data.audioBlob], { type: "audio/mpeg" });
+        setAudioBlob(audioBlob);
+        const url = URL.createObjectURL(audioBlob);
+        dispatch(setAudioUrl(url));
+        dispatch(setAudioFile(audioBlob));
+        toast.success("New audio received from host");
+      } catch (error) {
+        console.error("Error processing audio:", error);
+        toast.error("Failed to load audio from host");
+      }
     } else if (data.type === "play") {
       // Host started playing
       if (audioRef.current) {
         audioRef.current.currentTime = data.currentTime || 0;
-        audioRef.current.play();
+        audioRef.current.play().catch((error) => {
+          console.error("Error playing audio:", error);
+          toast.error("Failed to play audio");
+        });
         dispatch(setCurrentTime(data.currentTime || 0));
       }
     } else if (data.type === "pause") {
@@ -88,16 +100,20 @@ export default function ClientPage() {
     dispatch(addSyncMessage({ type: "received", data }));
   };
 
-  // Connect to sync service
-  const { setMessageHandler, sendTimeUpdate } = useSyncService(
-    sessionCode,
-    "client",
-    userName
-  );
+  // Only connect to sync service when both sessionCode and userName are set
+  let setMessageHandler = null;
+  let sendTimeUpdate = null;
+  if (sessionCode && userName) {
+    const syncApi = useSyncService(sessionCode, "client", userName);
+    setMessageHandler = syncApi.setMessageHandler;
+    sendTimeUpdate = syncApi.sendTimeUpdate;
+  }
 
   // Set up message handler
   useEffect(() => {
-    setMessageHandler(handleSync);
+    if (setMessageHandler) {
+      setMessageHandler(handleSync);
+    }
   }, [setMessageHandler]);
 
   useEffect(() => {
@@ -159,6 +175,59 @@ export default function ClientPage() {
     }
   };
 
+  if (!sessionCode) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingState
+          isLoading={true}
+          loadingText="Waiting for session code..."
+          size="large"
+        />
+      </div>
+    );
+  }
+
+  if (!userName) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center py-8 bg-slate-800/80 border border-white/10 p-8 rounded-xl max-w-md w-full">
+          <h3 className="text-xl font-semibold mb-4">Enter Your Name</h3>
+          <input
+            type="text"
+            placeholder="Your name"
+            value={userName}
+            onChange={(e) => setUserName(e.target.value)}
+            className="bg-slate-700/50 border border-slate-600 rounded px-4 py-2 w-full max-w-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            onKeyPress={(e) => {
+              if (e.key === "Enter" && userName.trim()) {
+                localStorage.setItem(
+                  `audionize_user_${sessionCode}`,
+                  userName.trim()
+                );
+                setUserName(userName.trim());
+              }
+            }}
+          />
+          <button
+            onClick={() => {
+              if (userName.trim()) {
+                localStorage.setItem(
+                  `audionize_user_${sessionCode}`,
+                  userName.trim()
+                );
+                setUserName(userName.trim());
+              }
+            }}
+            disabled={!userName.trim()}
+            className="mt-4 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-500/50 px-6 py-2 rounded text-white transition-colors"
+          >
+            Join Session
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -204,16 +273,38 @@ export default function ClientPage() {
             <div
               className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
                 isConnected
-                  ? "bg-green-500/20 text-green-400"
-                  : "bg-red-500/20 text-red-400"
+                  ? "bg-green-500/30 text-green-300 border border-green-500/50"
+                  : "bg-red-500/30 text-red-300 border border-red-500/50"
               }`}
             >
               <div
                 className={`w-2 h-2 rounded-full mr-2 ${
-                  isConnected ? "bg-green-400" : "bg-red-400"
+                  isConnected ? "bg-green-400 animate-pulse" : "bg-red-400"
                 }`}
               ></div>
               {isConnected ? "Connected" : "Disconnected"}
+            </div>
+            <div className="mt-2">
+              <div
+                className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                  syncStatus === "connected"
+                    ? "bg-blue-500/30 text-blue-300 border border-blue-500/50"
+                    : syncStatus === "syncing"
+                    ? "bg-yellow-500/30 text-yellow-300 border border-yellow-500/50"
+                    : "bg-gray-500/30 text-gray-300 border border-gray-500/50"
+                }`}
+              >
+                <div
+                  className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                    syncStatus === "connected"
+                      ? "bg-blue-400"
+                      : syncStatus === "syncing"
+                      ? "bg-yellow-400 animate-pulse"
+                      : "bg-gray-400"
+                  }`}
+                ></div>
+                {syncStatus || "Unknown"}
+              </div>
             </div>
           </div>
         </div>
@@ -264,18 +355,25 @@ export default function ClientPage() {
               </p>
             </div>
 
-            {audioUrl && (
+            {audioUrl ? (
               <div className="space-y-4">
-                <audio
-                  ref={audioRef}
-                  src={audioUrl}
-                  onTimeUpdate={handleTimeUpdate}
-                  onLoadedMetadata={handleLoadedMetadata}
-                  onPlay={handlePlay}
-                  onPause={handlePause}
-                  className="w-full"
-                  controls
-                />
+                <div className="bg-slate-700/30 rounded-lg p-4">
+                  <audio
+                    ref={audioRef}
+                    src={audioUrl}
+                    onTimeUpdate={handleTimeUpdate}
+                    onLoadedMetadata={handleLoadedMetadata}
+                    onPlay={() => dispatch(setIsPlaying(true))}
+                    onPause={() => dispatch(setIsPlaying(false))}
+                    onError={(e) => {
+                      console.error("Audio error:", e);
+                      toast.error("Audio playback error");
+                    }}
+                    className="w-full"
+                    controls
+                    preload="metadata"
+                  />
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -289,6 +387,7 @@ export default function ClientPage() {
                       value={currentTime || 0}
                       onChange={handleSeek}
                       className="w-full accent-blue-500"
+                      disabled={!audioUrl}
                     />
                     <div className="flex justify-between text-sm text-slate-400 mt-1">
                       <span>{formatTime(currentTime)}</span>
@@ -308,9 +407,34 @@ export default function ClientPage() {
                       defaultValue="1"
                       onChange={handleVolumeChange}
                       className="w-full accent-blue-500"
+                      disabled={!audioUrl}
                     />
                   </div>
                 </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 bg-slate-700/30 rounded-lg">
+                <div className="text-slate-400 mb-2">
+                  <svg
+                    className="w-12 h-12 mx-auto mb-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                    />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-slate-300 mb-2">
+                  Waiting for Audio
+                </h3>
+                <p className="text-slate-400">
+                  The host will upload audio to start the session
+                </p>
               </div>
             )}
 

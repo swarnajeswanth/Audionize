@@ -126,21 +126,26 @@ export default function HostPage() {
   const handleAudioUpload = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      setAudioFileState(file);
-      const url = URL.createObjectURL(file);
-      setAudioUrlState(url);
-      setCurrentTimeState(0);
-      setDurationState(0);
+      try {
+        setAudioFileState(file);
+        const url = URL.createObjectURL(file);
+        setAudioUrlState(url);
+        setCurrentTimeState(0);
+        setDurationState(0);
 
-      // Convert file to blob for sharing
-      const blob = new Blob([file], { type: file.type });
-      setAudioBlob(blob);
+        // Convert file to blob for sharing
+        const blob = new Blob([file], { type: file.type });
+        setAudioBlob(blob);
 
-      // Send audio to all clients
-      const arrayBuffer = await file.arrayBuffer();
-      sendAudio(arrayBuffer, file.name, file.size);
+        // Send audio to all clients
+        const arrayBuffer = await file.arrayBuffer();
+        sendAudio(arrayBuffer, file.name, file.size);
 
-      toast.success("Audio uploaded and shared with clients");
+        toast.success("Audio uploaded and shared with clients");
+      } catch (error) {
+        console.error("Error uploading audio:", error);
+        toast.error("Failed to upload audio");
+      }
     }
   };
 
@@ -247,16 +252,35 @@ export default function HostPage() {
             <div
               className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
                 isConnected
-                  ? "bg-green-500/20 text-green-400"
-                  : "bg-red-500/20 text-red-400"
+                  ? "bg-green-500/30 text-green-300 border border-green-500/50"
+                  : "bg-red-500/30 text-red-300 border border-red-500/50"
               }`}
             >
               <div
                 className={`w-2 h-2 rounded-full mr-2 ${
-                  isConnected ? "bg-green-400" : "bg-red-400"
+                  isConnected ? "bg-green-400 animate-pulse" : "bg-red-400"
                 }`}
               ></div>
               {isConnected ? "Connected" : "Disconnected"}
+            </div>
+            <div className="mt-2">
+              <div
+                className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                  connectedClients.length > 0
+                    ? "bg-blue-500/30 text-blue-300 border border-blue-500/50"
+                    : "bg-gray-500/30 text-gray-300 border border-gray-500/50"
+                }`}
+              >
+                <div
+                  className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                    connectedClients.length > 0
+                      ? "bg-blue-400 animate-pulse"
+                      : "bg-gray-400"
+                  }`}
+                ></div>
+                {connectedClients.length} Client
+                {connectedClients.length !== 1 ? "s" : ""}
+              </div>
             </div>
           </div>
         </div>
@@ -298,18 +322,25 @@ export default function HostPage() {
         </div>
 
         {/* Audio Player */}
-        {audioUrl && (
+        {audioUrl ? (
           <div className="space-y-4 mb-6">
-            <audio
-              ref={audioRef}
-              src={audioUrl}
-              onTimeUpdate={handleTimeUpdate}
-              onLoadedMetadata={handleLoadedMetadata}
-              onPlay={handlePlay}
-              onPause={handlePause}
-              className="w-full"
-              controls
-            />
+            <div className="bg-slate-700/30 rounded-lg p-4">
+              <audio
+                ref={audioRef}
+                src={audioUrl}
+                onTimeUpdate={handleTimeUpdate}
+                onLoadedMetadata={handleLoadedMetadata}
+                onPlay={handlePlay}
+                onPause={handlePause}
+                onError={(e) => {
+                  console.error("Audio error:", e);
+                  toast.error("Audio playback error");
+                }}
+                className="w-full"
+                controls
+                preload="metadata"
+              />
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -354,6 +385,30 @@ export default function HostPage() {
                 Sync All Clients
               </button>
             </div>
+          </div>
+        ) : (
+          <div className="text-center py-8 bg-slate-700/30 rounded-lg mb-6">
+            <div className="text-slate-400 mb-2">
+              <svg
+                className="w-12 h-12 mx-auto mb-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-slate-300 mb-2">
+              Upload Audio to Start
+            </h3>
+            <p className="text-slate-400">
+              Upload an audio file above to begin the synchronized session
+            </p>
           </div>
         )}
 

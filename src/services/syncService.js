@@ -59,11 +59,13 @@ class SyncService {
       }
     });
     this.socket.on("audio-uploaded", (data) => {
+      console.log("Received audio upload:", data);
       if (this.onAudioUpdateCallback) {
         this.onAudioUpdateCallback(data);
       }
     });
     this.socket.on("playback-action", (data) => {
+      console.log("Received playback action:", data);
       if (this.onMessageCallback) {
         this.onMessageCallback(data);
       }
@@ -82,6 +84,7 @@ class SyncService {
   // Send audio file to clients
   sendAudio(audioBlob, fileName, fileSize) {
     if (this.socket && this.isConnected) {
+      console.log("Sending audio to clients:", { fileName, fileSize });
       this.socket.emit("audio-uploaded", {
         session: this.sessionCode,
         audioBlob,
@@ -89,34 +92,46 @@ class SyncService {
         fileSize,
         timestamp: Date.now(),
       });
+    } else {
+      console.error("Cannot send audio: socket not connected");
     }
   }
 
   // Send play command to clients
-  sendPlaybackAction(action) {
+  sendPlay(currentTime = 0) {
     if (this.socket && this.isConnected) {
+      console.log("Sending play command:", { currentTime });
       this.socket.emit("playback-action", {
         session: this.sessionCode,
-        ...action,
+        type: "play",
+        currentTime: currentTime,
+        timestamp: Date.now(),
       });
+    } else {
+      console.error("Cannot send play command: socket not connected");
     }
   }
 
   // Send pause command to clients
   sendPause() {
     if (this.socket && this.isConnected) {
-      this.socket.emit("pause_command", {
-        sessionCode: this.sessionCode,
+      console.log("Sending pause command");
+      this.socket.emit("playback-action", {
+        session: this.sessionCode,
+        type: "pause",
         timestamp: Date.now(),
       });
+    } else {
+      console.error("Cannot send pause command: socket not connected");
     }
   }
 
   // Send seek command to clients
   sendSeek(currentTime) {
     if (this.socket && this.isConnected) {
-      this.socket.emit("seek_command", {
-        sessionCode: this.sessionCode,
+      this.socket.emit("playback-action", {
+        session: this.sessionCode,
+        type: "seek",
         currentTime: currentTime,
         timestamp: Date.now(),
       });
@@ -126,8 +141,9 @@ class SyncService {
   // Send volume command to clients
   sendVolume(volume) {
     if (this.socket && this.isConnected) {
-      this.socket.emit("volume_command", {
-        sessionCode: this.sessionCode,
+      this.socket.emit("playback-action", {
+        session: this.sessionCode,
+        type: "volume",
         volume: volume,
         timestamp: Date.now(),
       });

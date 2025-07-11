@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import syncService from "../services/syncService";
+import toast from "react-hot-toast";
 
 export const useSyncService = (sessionCode, role, userName) => {
   const isConnectedRef = useRef(false);
@@ -7,12 +8,23 @@ export const useSyncService = (sessionCode, role, userName) => {
   // Connect to sync service
   useEffect(() => {
     if (sessionCode && role && userName && !isConnectedRef.current) {
-      syncService.connect(sessionCode, role, userName);
-      isConnectedRef.current = true;
+      try {
+        console.log("Connecting to sync service:", {
+          sessionCode,
+          role,
+          userName,
+        });
+        syncService.connect(sessionCode, role, userName);
+        isConnectedRef.current = true;
+      } catch (error) {
+        console.error("Failed to connect to sync service:", error);
+        toast.error("Failed to connect to sync service");
+      }
     }
 
     return () => {
       if (isConnectedRef.current) {
+        console.log("Disconnecting from sync service");
         syncService.disconnect();
         isConnectedRef.current = false;
       }
