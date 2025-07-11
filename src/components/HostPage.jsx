@@ -67,12 +67,12 @@ export default function HostPage() {
   };
 
   const lanCode = sessionCode || generateLANCode();
-  // Generate join link for Internet mode
+  // Generate join link for Internet mode (root URL, not /join)
   const joinUrl = `${
     typeof window !== "undefined"
       ? window.location.origin
       : "https://audionize.netlify.app"
-  }/join?code=${sessionCode}`;
+  }?code=${sessionCode}`;
 
   // Handle feature selection
   const handleFeatureSelect = (feature) => {
