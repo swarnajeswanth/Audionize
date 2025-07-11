@@ -1,128 +1,52 @@
-import { apiHelpers } from "../lib/axios";
+import { io } from "socket.io-client";
 
 class VoiceChatService {
   constructor() {
-    this.ws = null;
+    this.socket = null;
     this.sessionCode = null;
     this.userId = null;
     this.onMessageCallback = null;
     this.onParticipantUpdateCallback = null;
-    this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
-    this.reconnectDelay = 1000;
   }
 
-  // Connect to voice chat WebSocket
-  connect(sessionCode, userId, serverUrl = null) {
+  connect(sessionCode, userId, name = "Guest") {
     this.sessionCode = sessionCode;
     this.userId = userId;
+    this.socket = io(
+      process.env.NEXT_PUBLIC_IO_URL || "https://aduionize-socket.onrender.com",
+      { path: "/socket.io" }
+    );
+    this.socket.emit("join", { session: sessionCode, role: "client", name });
 
-    const wsUrl = serverUrl || `ws://${window.location.hostname}:4001/voice`;
-    const fullUrl = `${wsUrl}?session=${sessionCode}&userId=${userId}`;
-
-    try {
-      this.ws = new WebSocket(fullUrl);
-
-      this.ws.onopen = () => {
-        console.log("Voice chat WebSocket connected");
-        this.reconnectAttempts = 0;
-        this.sendMessage({
-          type: "join",
-          sessionCode,
-          userId,
-          timestamp: Date.now(),
-        });
-      };
-
-      this.ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          this.handleMessage(data);
-        } catch (error) {
-          console.error("Failed to parse voice chat message:", error);
-        }
-      };
-
-      this.ws.onclose = (event) => {
-        console.log(
-          "Voice chat WebSocket disconnected:",
-          event.code,
-          event.reason
-        );
-        this.handleDisconnect();
-      };
-
-      this.ws.onerror = (error) => {
-        console.error("Voice chat WebSocket error:", error);
-      };
-    } catch (error) {
-      console.error("Failed to create voice chat WebSocket:", error);
-      throw error;
-    }
+    this.socket.on("voice_data", (data) =>
+      this.handleMessage({ ...data, type: "voice_data" })
+    );
+    this.socket.on("speaker_update", (data) =>
+      this.handleMessage({ ...data, type: "speaker_update" })
+    );
+    this.socket.on("participant_joined", (data) =>
+      this.handleParticipantJoined(data)
+    );
+    this.socket.on("participant_left", (data) =>
+      this.handleParticipantLeft(data)
+    );
+    this.socket.on("volume_update", (data) =>
+      this.handleMessage({ ...data, type: "volume_update" })
+    );
+    this.socket.on("mute_update", (data) =>
+      this.handleMessage({ ...data, type: "mute_update" })
+    );
+    this.socket.on("permission_update", (data) =>
+      this.handleMessage({ ...data, type: "permission_update" })
+    );
   }
 
-  // Handle incoming messages
   handleMessage(data) {
-    switch (data.type) {
-      case "voice_data":
-        this.handleVoiceData(data);
-        break;
-      case "speaker_update":
-        this.handleSpeakerUpdate(data);
-        break;
-      case "participant_joined":
-        this.handleParticipantJoined(data);
-        break;
-      case "participant_left":
-        this.handleParticipantLeft(data);
-        break;
-      case "volume_update":
-        this.handleVolumeUpdate(data);
-        break;
-      case "mute_update":
-        this.handleMuteUpdate(data);
-        break;
-      case "permission_update":
-        if (this.onMessageCallback) {
-          this.onMessageCallback({
-            type: "permission_update",
-            userId: data.userId,
-            canSpeak: data.canSpeak,
-          });
-        }
-        break;
-      default:
-        if (this.onMessageCallback) {
-          this.onMessageCallback(data);
-        }
-    }
-  }
-
-  // Handle voice data from other participants
-  handleVoiceData(data) {
     if (this.onMessageCallback) {
-      this.onMessageCallback({
-        type: "voice_data",
-        audioBlob: data.audioBlob,
-        userId: data.userId,
-        timestamp: data.timestamp,
-      });
+      this.onMessageCallback(data);
     }
   }
 
-  // Handle speaker status updates
-  handleSpeakerUpdate(data) {
-    if (this.onMessageCallback) {
-      this.onMessageCallback({
-        type: "speaker_update",
-        userId: data.userId,
-        isSpeaking: data.isSpeaking,
-        volume: data.volume,
-      });
-    }
-  }
-
-  // Handle participant joining
   handleParticipantJoined(data) {
     if (this.onParticipantUpdateCallback) {
       this.onParticipantUpdateCallback({
@@ -132,46 +56,17 @@ class VoiceChatService {
     }
   }
 
-  // Handle participant leaving
   handleParticipantLeft(data) {
     if (this.onParticipantUpdateCallback) {
-      this.onParticipantUpdateCallback({
-        type: "left",
-        userId: data.userId,
-      });
+      this.onParticipantUpdateCallback({ type: "left", userId: data.userId });
     }
   }
 
-  // Handle volume updates
-  handleVolumeUpdate(data) {
-    if (this.onMessageCallback) {
-      this.onMessageCallback({
-        type: "volume_update",
-        userId: data.userId,
-        volume: data.volume,
-      });
-    }
-  }
-
-  // Handle mute updates
-  handleMuteUpdate(data) {
-    if (this.onMessageCallback) {
-      this.onMessageCallback({
-        type: "mute_update",
-        userId: data.userId,
-        isMuted: data.isMuted,
-      });
-    }
-  }
-
-  // Send voice data to other participants
   sendVoiceData(audioBlob) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      // Convert blob to base64 for WebSocket transmission
+    if (this.socket) {
       const reader = new FileReader();
       reader.onload = () => {
-        this.sendMessage({
-          type: "voice_data",
+        this.socket.emit("voice_data", {
           audioBlob: reader.result,
           userId: this.userId,
           sessionCode: this.sessionCode,
@@ -182,122 +77,83 @@ class VoiceChatService {
     }
   }
 
-  // Send speaker status update
   sendSpeakerUpdate(isSpeaking, volume = 0) {
-    this.sendMessage({
-      type: "speaker_update",
-      userId: this.userId,
-      sessionCode: this.sessionCode,
-      isSpeaking,
-      volume,
-      timestamp: Date.now(),
-    });
+    if (this.socket) {
+      this.socket.emit("speaker_update", {
+        userId: this.userId,
+        sessionCode: this.sessionCode,
+        isSpeaking,
+        volume,
+        timestamp: Date.now(),
+      });
+    }
   }
 
-  // Send volume update
   sendVolumeUpdate(volume) {
-    this.sendMessage({
-      type: "volume_update",
-      userId: this.userId,
-      sessionCode: this.sessionCode,
-      volume,
-      timestamp: Date.now(),
-    });
+    if (this.socket) {
+      this.socket.emit("volume_update", {
+        userId: this.userId,
+        sessionCode: this.sessionCode,
+        volume,
+        timestamp: Date.now(),
+      });
+    }
   }
 
-  // Send mute status update
   sendMuteUpdate(isMuted) {
-    this.sendMessage({
-      type: "mute_update",
-      userId: this.userId,
-      sessionCode: this.sessionCode,
-      isMuted,
-      timestamp: Date.now(),
-    });
+    if (this.socket) {
+      this.socket.emit("mute_update", {
+        userId: this.userId,
+        sessionCode: this.sessionCode,
+        isMuted,
+        timestamp: Date.now(),
+      });
+    }
   }
 
-  // Send permission update (host only)
   sendPermissionUpdate(userId, canSpeak) {
-    this.sendMessage({
-      type: "permission_update",
-      userId,
-      canSpeak,
-      sessionCode: this.sessionCode,
-      timestamp: Date.now(),
-    });
+    if (this.socket) {
+      this.socket.emit("permission_update", {
+        userId,
+        canSpeak,
+        sessionCode: this.sessionCode,
+        timestamp: Date.now(),
+      });
+    }
   }
 
-  // Send generic message
   sendMessage(message) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-    } else {
-      console.warn("WebSocket not connected, cannot send message:", message);
+    if (this.socket) {
+      this.socket.emit("custom_message", {
+        ...message,
+        sessionCode: this.sessionCode,
+      });
     }
   }
 
-  // Handle disconnection with reconnection logic
-  handleDisconnect() {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++;
-      console.log(
-        `Attempting to reconnect voice chat (${this.reconnectAttempts}/${this.maxReconnectAttempts})`
-      );
-
-      setTimeout(() => {
-        this.connect(this.sessionCode, this.userId);
-      }, this.reconnectDelay * this.reconnectAttempts);
-    } else {
-      console.error("Max reconnection attempts reached for voice chat");
-    }
-  }
-
-  // Set message callback
   setOnMessage(callback) {
     this.onMessageCallback = callback;
   }
 
-  // Set participant update callback
   setOnParticipantUpdate(callback) {
     this.onParticipantUpdateCallback = callback;
   }
 
-  // Disconnect
   disconnect() {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
     }
-    this.sessionCode = null;
-    this.userId = null;
-    this.onMessageCallback = null;
-    this.onParticipantUpdateCallback = null;
   }
 
-  // Check connection status
   isConnected() {
-    return this.ws && this.ws.readyState === WebSocket.OPEN;
+    return this.socket && this.socket.connected;
   }
 
-  // Get connection state
   getConnectionState() {
-    if (!this.ws) return "disconnected";
-    switch (this.ws.readyState) {
-      case WebSocket.CONNECTING:
-        return "connecting";
-      case WebSocket.OPEN:
-        return "connected";
-      case WebSocket.CLOSING:
-        return "closing";
-      case WebSocket.CLOSED:
-        return "closed";
-      default:
-        return "unknown";
-    }
+    return this.socket ? this.socket.connected : false;
   }
 }
 
-// Create singleton instance
 const voiceChatService = new VoiceChatService();
-
 export default voiceChatService;

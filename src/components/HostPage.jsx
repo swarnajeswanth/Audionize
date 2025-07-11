@@ -201,30 +201,32 @@ export default function HostPage() {
     // Set as host when component mounts
     dispatch(setIsHost(true));
 
-    // Simulate initial connection (in real app, this would come from WebSocket/WebRTC)
-    // For now, we'll simulate a device connecting after a short delay
-    const timer = setTimeout(() => {
-      if (!isConnected) {
-        dispatch(setConnected(true));
-        dispatch(setSyncStatus("connected"));
+    // Listen for real guest join events from backend
+    if (
+      internetSync &&
+      internetSync.socketRef &&
+      internetSync.socketRef.current
+    ) {
+      const socket = internetSync.socketRef.current;
+      socket.on("user-joined", (data) => {
         dispatch(
           addConnectedClient({
-            id: "demo-client-1",
-            name: "Demo Device",
+            id: data.userId || data.name,
+            name: data.name,
             status: "connected",
             currentTime: 0,
             drift: 0,
             lastUpdate: new Date().toISOString(),
           })
         );
-      }
-    }, 2000);
+        toast.success(`${data.name} joined the session!`);
+      });
+    }
 
     return () => {
-      clearTimeout(timer);
       dispatch(setIsHost(false));
     };
-  }, [dispatch, isConnected]);
+  }, [dispatch, internetSync]);
 
   // Handle actual device connections - only show toast for new connections
   useEffect(() => {

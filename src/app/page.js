@@ -29,6 +29,7 @@ export default function Audionize() {
   const [showNameModal, setShowNameModal] = useState(false);
   const [pendingJoinCode, setPendingJoinCode] = useState(null);
   const [joinError, setJoinError] = useState("");
+  const [isInSession, setIsInSession] = useState(false);
 
   // Sync NextAuth session with Redux (but don't redirect)
   useEffect(() => {
@@ -58,10 +59,9 @@ export default function Audionize() {
   }, [dispatch, isAuthenticated]);
 
   const handleJoinWithName = (name) => {
-    // Here you would dispatch an action to join the session with the name
-    // For now, just close the modal
     setShowNameModal(false);
     setJoinError("");
+    setIsInSession(true); // Mark as joined
     // Example: dispatch(joinSessionWithName(pendingJoinCode, name));
   };
 
@@ -230,16 +230,31 @@ export default function Audionize() {
         </nav>
         {/* Main content area */}
         <main className="flex-grow container mx-auto px-4 pt-24 pb-12">
-          {page === "home" && <HomePage showPage={showPage} />}
-          {page === "host" && (
-            <AuthCheck>
-              <HostPage />
-            </AuthCheck>
-          )}
-          {page === "settings" && (
-            <AuthCheck>
-              <SettingsPage />
-            </AuthCheck>
+          {isInSession ? (
+            <div className="text-center mt-16">
+              <h2 className="text-3xl font-bold mb-4">
+                You have joined the session!
+              </h2>
+              <p className="text-lg text-slate-300 mb-6">
+                Waiting for the host to start music or for other participants to
+                join...
+              </p>
+              {/* Optionally, show session code or other info here */}
+            </div>
+          ) : (
+            <>
+              {page === "home" && <HomePage showPage={showPage} />}
+              {page === "host" && (
+                <AuthCheck>
+                  <HostPage />
+                </AuthCheck>
+              )}
+              {page === "settings" && (
+                <AuthCheck>
+                  <SettingsPage />
+                </AuthCheck>
+              )}
+            </>
           )}
         </main>
         {/* Footer */}
