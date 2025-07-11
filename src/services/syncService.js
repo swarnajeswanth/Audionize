@@ -42,8 +42,7 @@ class SyncService {
       this.isConnected = false;
     });
 
-    this.socket.on("client_joined", (data) => {
-      console.log("Client joined:", data);
+    this.socket.on("user-joined", (data) => {
       if (this.onClientUpdateCallback) {
         this.onClientUpdateCallback({
           type: "joined",
@@ -51,75 +50,27 @@ class SyncService {
         });
       }
     });
-
-    this.socket.on("client_left", (data) => {
-      console.log("Client left:", data);
+    this.socket.on("user-left", (data) => {
       if (this.onClientUpdateCallback) {
         this.onClientUpdateCallback({
           type: "left",
-          clientId: data.clientId,
+          clientId: data.id,
         });
       }
     });
-
-    this.socket.on("audio_sync", (data) => {
-      console.log("Audio sync received:", data);
+    this.socket.on("audio-uploaded", (data) => {
       if (this.onAudioUpdateCallback) {
         this.onAudioUpdateCallback(data);
       }
     });
-
-    this.socket.on("play_command", (data) => {
-      console.log("Play command received:", data);
+    this.socket.on("playback-action", (data) => {
       if (this.onMessageCallback) {
-        this.onMessageCallback({
-          type: "play",
-          currentTime: data.currentTime,
-          timestamp: data.timestamp,
-        });
+        this.onMessageCallback(data);
       }
     });
-
-    this.socket.on("pause_command", (data) => {
-      console.log("Pause command received:", data);
+    this.socket.on("presence-update", (data) => {
       if (this.onMessageCallback) {
-        this.onMessageCallback({
-          type: "pause",
-          timestamp: data.timestamp,
-        });
-      }
-    });
-
-    this.socket.on("seek_command", (data) => {
-      console.log("Seek command received:", data);
-      if (this.onMessageCallback) {
-        this.onMessageCallback({
-          type: "seek",
-          currentTime: data.currentTime,
-          timestamp: data.timestamp,
-        });
-      }
-    });
-
-    this.socket.on("volume_command", (data) => {
-      console.log("Volume command received:", data);
-      if (this.onMessageCallback) {
-        this.onMessageCallback({
-          type: "volume",
-          volume: data.volume,
-          timestamp: data.timestamp,
-        });
-      }
-    });
-
-    this.socket.on("sync_all_command", (data) => {
-      console.log("Sync all command received:", data);
-      if (this.onMessageCallback) {
-        this.onMessageCallback({
-          type: "sync_all",
-          currentTime: data.currentTime,
-          timestamp: data.timestamp,
-        });
+        this.onMessageCallback({ type: "presence-update", ...data });
       }
     });
 
@@ -131,23 +82,22 @@ class SyncService {
   // Send audio file to clients
   sendAudio(audioBlob, fileName, fileSize) {
     if (this.socket && this.isConnected) {
-      this.socket.emit("audio_upload", {
-        sessionCode: this.sessionCode,
-        audioBlob: audioBlob,
-        fileName: fileName,
-        fileSize: fileSize,
+      this.socket.emit("audio-uploaded", {
+        session: this.sessionCode,
+        audioBlob,
+        fileName,
+        fileSize,
         timestamp: Date.now(),
       });
     }
   }
 
   // Send play command to clients
-  sendPlay(currentTime = 0) {
+  sendPlaybackAction(action) {
     if (this.socket && this.isConnected) {
-      this.socket.emit("play_command", {
-        sessionCode: this.sessionCode,
-        currentTime: currentTime,
-        timestamp: Date.now(),
+      this.socket.emit("playback-action", {
+        session: this.sessionCode,
+        ...action,
       });
     }
   }

@@ -19,6 +19,25 @@ export const useSyncService = (sessionCode, role, userName) => {
     };
   }, [sessionCode, role, userName]);
 
+  // Handle room-full event
+  useEffect(() => {
+    // Only attach if socket exists
+    if (syncService.socket) {
+      const handler = (data) => {
+        alert(data.message); // Or use toast.error(data.message) for better UX
+        // Optionally, redirect the user back to home/join page
+      };
+      syncService.socket.on("room-full", handler);
+
+      // Cleanup
+      return () => {
+        if (syncService.socket) {
+          syncService.socket.off("room-full", handler);
+        }
+      };
+    }
+  }, [sessionCode, role, userName]);
+
   // Set up message handlers
   const setMessageHandler = useCallback((handler) => {
     syncService.setOnMessage(handler);
@@ -64,6 +83,39 @@ export const useSyncService = (sessionCode, role, userName) => {
   // Get connection status
   const getConnectionStatus = useCallback(() => {
     return syncService.getConnectionStatus();
+  }, []);
+
+  // When user toggles mic
+  const handleMicToggle = (isMuted) => {
+    syncService.socket.emit("mic-status", { isMuted });
+    // Optionally, update local UI state immediately
+  };
+
+  useEffect(() => {
+    if (syncService.socket) {
+      const handler = (data) => {
+        // Update the UI to reflect mic status for userId
+        // e.g., update Redux or local state for the participant list
+        // Example: dispatch(updateMicStatus({ userId: data.userId, isMuted: data.isMuted }))
+      };
+      syncService.socket.on("mic-status-update", handler);
+      return () => {
+        syncService.socket.off("mic-status-update", handler);
+      };
+    }
+  }, []);
+
+  useEffect(() => {
+    if (syncService.socket) {
+      const handler = () => {
+        // Set local mic state to muted
+        // Optionally, show a toast: "You have been muted by the host"
+      };
+      syncService.socket.on("muted", handler);
+      return () => {
+        syncService.socket.off("muted", handler);
+      };
+    }
   }, []);
 
   return {

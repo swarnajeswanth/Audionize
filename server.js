@@ -89,29 +89,49 @@ io.on("connection", (socket) => {
   console.log("Socket.IO client connected:", socket.id);
 
   socket.on("join", ({ session, role, name }) => {
-    console.log(`Client ${socket.id} joining session ${session} as ${role}`);
     socket.session = session;
     socket.role = role;
     socket.name = name;
     socket.join(session);
 
+    // Track host/client in memory for this session
     sessions[session] = sessions[session] || {
       clients: [],
       host: null,
-      audioData: null,
+      audio: null,
     };
-
     if (role === "host") {
-      sessions[session].host = socket;
+      sessions[session].host = { id: socket.id, name: name, socket: socket };
+      if (sessions[session].audio) {
+        socket.emit("audio-uploaded", sessions[session].audio);
+      }
     } else {
-      sessions[session].clients.push(socket);
-      // Notify host about new client
-      socket.to(session).emit("client_joined", {
-        clientId: socket.id,
-        clientName: name,
-        timestamp: Date.now(),
+      sessions[session].clients.push({
+        id: socket.id,
+        name: name,
+        socket: socket,
       });
+      if (sessions[session].audio) {
+        socket.emit("audio-uploaded", sessions[session].audio);
+      }
+      // Notify host
+      if (sessions[session].host) {
+        sessions[session].host.socket.emit("user-joined", {
+          name,
+          id: socket.id,
+        });
+      }
     }
+
+    // Notify all clients of updated presence
+    const clientList = sessions[session].clients.map((c) => ({
+      id: c.id,
+      name: c.name,
+    }));
+    io.to(session).emit("presence-update", {
+      host: sessions[session].host?.name,
+      clients: clientList,
+    });
   });
 
   socket.on("audio_upload", (data) => {
@@ -181,18 +201,25 @@ io.on("connection", (socket) => {
     if (socket.session && sessions[socket.session]) {
       sessions[socket.session].clients = (
         sessions[socket.session].clients || []
-      ).filter((c) => c !== socket);
-      if (sessions[socket.session].host === socket)
-        sessions[socket.session].host = null;
+      ).filter((c) => c.socket !== socket);
 
-      // Notify host about client leaving
-      if (socket.role === "client") {
-        socket.to(socket.session).emit("client_left", {
-          clientId: socket.id,
-          clientName: socket.name,
-          timestamp: Date.now(),
-        });
+      if (sessions[socket.session].host?.socket === socket) {
+        sessions[socket.session].host = null;
       }
+
+      // Notify all clients of updated presence
+      const clientList = sessions[socket.session].clients.map((c) => ({
+        id: c.id,
+        name: c.name,
+      }));
+      io.to(socket.session).emit("presence-update", {
+        host: sessions[socket.session].host?.name,
+        clients: clientList,
+      });
+
+      socket
+        .to(socket.session)
+        .emit("user-left", { name: socket.name, role: socket.role });
     }
   });
 });
