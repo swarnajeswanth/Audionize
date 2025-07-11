@@ -47,18 +47,40 @@ export function middleware(request) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
+  // Check if we're in development mode
+  const isDev = process.env.NODE_ENV !== "production";
+
   // Update Content Security Policy for WebSocket connections and allow inline styles/scripts
-  const csp = `
-    default-src 'self';
-    connect-src 'self' ws: wss: wss://aduionize-socket.onrender.com https://aduionize-socket.onrender.com;
-    media-src 'self' blob:;
-    style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';
-  `.replace(/\n/g, "");
+  const csp = isDev
+    ? `
+      default-src 'self';
+      connect-src 'self' ws: wss: http://localhost:4000 ws://localhost:4000 http://127.0.0.1:4000 ws://127.0.0.1:4000 https://aduionize-socket.onrender.com wss://aduionize-socket.onrender.com;
+      media-src 'self' blob:;
+      style-src 'self' 'unsafe-inline';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval';
+    `.replace(/\n/g, "")
+    : `
+      default-src 'self';
+      connect-src 'self' ws: wss: https://aduionize-socket.onrender.com wss://aduionize-socket.onrender.com;
+      media-src 'self' blob:;
+      style-src 'self' 'unsafe-inline';
+      script-src 'self' 'unsafe-inline';
+    `.replace(/\n/g, "");
+
   response.headers.set("Content-Security-Policy", csp);
 
   return response;
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     */
+    "/((?!api|_next/static|_next/image|favicon.ico).*)",
+  ],
 };
