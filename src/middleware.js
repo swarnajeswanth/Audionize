@@ -48,10 +48,13 @@ export function middleware(request) {
   }
 
   // Update Content Security Policy for WebSocket connections and allow inline styles/scripts
-  response.headers.set(
-    "Content-Security-Policy",
-    "default-src 'self'; connect-src 'self' ws: wss: https://aduionize-socket.onrender.com wss://aduionize-socket.onrender.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';"
-  );
+  const csp = `
+    default-src 'self';
+    connect-src 'self' ws: wss: wss://aduionize-socket.onrender.com https://aduionize-socket.onrender.com;
+    media-src 'self' blob:;
+    style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';
+  `.replace(/\n/g, "");
+  response.headers.set("Content-Security-Policy", csp);
 
   return response;
 }
