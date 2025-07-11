@@ -13,6 +13,11 @@ class SyncService {
   }
 
   connect(sessionCode, role, userName) {
+    // Disconnect existing connection if any
+    if (this.socket) {
+      this.disconnect();
+    }
+
     this.sessionCode = sessionCode;
     this.role = role;
     this.userName = userName;
@@ -196,7 +201,7 @@ class SyncService {
 
   // Get connection status
   getConnectionStatus() {
-    return this.isConnected;
+    return this.isConnected && this.socket !== null;
   }
 }
 

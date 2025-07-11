@@ -100,21 +100,28 @@ export default function ClientPage() {
     dispatch(addSyncMessage({ type: "received", data }));
   };
 
-  // Only connect to sync service when both sessionCode and userName are set
-  let setMessageHandler = null;
-  let sendTimeUpdate = null;
-  if (sessionCode && userName) {
-    const syncApi = useSyncService(sessionCode, "client", userName);
-    setMessageHandler = syncApi.setMessageHandler;
-    sendTimeUpdate = syncApi.sendTimeUpdate;
-  }
+  // Connect to sync service
+  const {
+    setMessageHandler,
+    setClientUpdateHandler,
+    setAudioUpdateHandler,
+    sendAudio,
+    sendPlay,
+    sendPause,
+    sendSeek,
+    sendVolume,
+    sendSyncAll,
+    sendTimeUpdate,
+    getConnectionStatus,
+    isConnected: syncConnected,
+  } = useSyncService(sessionCode || "", "client", userName || "");
 
   // Set up message handler
   useEffect(() => {
-    if (setMessageHandler) {
+    if (setMessageHandler && sessionCode && userName) {
       setMessageHandler(handleSync);
     }
-  }, [setMessageHandler]);
+  }, [setMessageHandler, sessionCode, userName]);
 
   useEffect(() => {
     if (sessionCode && userName) {
@@ -131,6 +138,14 @@ export default function ClientPage() {
     }
   }, [sessionCode, userName, dispatch]);
 
+  // Update connection status from sync service
+  useEffect(() => {
+    if (syncConnected !== undefined) {
+      dispatch(setConnected(syncConnected));
+      dispatch(setSyncStatus(syncConnected ? "connected" : "disconnected"));
+    }
+  }, [syncConnected, dispatch]);
+
   // Audio event handlers
   const handleTimeUpdate = () => {
     if (audioRef.current) {
@@ -138,7 +153,9 @@ export default function ClientPage() {
       dispatch(setCurrentTime(time));
 
       // Send sync update to host
-      sendTimeUpdate(time);
+      if (sendTimeUpdate) {
+        sendTimeUpdate(time);
+      }
     }
   };
 

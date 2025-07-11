@@ -99,8 +99,10 @@ export const useSyncService = (sessionCode, role, userName) => {
 
   // When user toggles mic
   const handleMicToggle = (isMuted) => {
-    syncService.socket.emit("mic-status", { isMuted });
-    // Optionally, update local UI state immediately
+    if (syncService.socket) {
+      syncService.socket.emit("mic-status", { isMuted });
+      // Optionally, update local UI state immediately
+    }
   };
 
   useEffect(() => {
@@ -112,7 +114,9 @@ export const useSyncService = (sessionCode, role, userName) => {
       };
       syncService.socket.on("mic-status-update", handler);
       return () => {
-        syncService.socket.off("mic-status-update", handler);
+        if (syncService.socket) {
+          syncService.socket.off("mic-status-update", handler);
+        }
       };
     }
   }, []);
@@ -125,7 +129,9 @@ export const useSyncService = (sessionCode, role, userName) => {
       };
       syncService.socket.on("muted", handler);
       return () => {
-        syncService.socket.off("muted", handler);
+        if (syncService.socket) {
+          syncService.socket.off("muted", handler);
+        }
       };
     }
   }, []);
