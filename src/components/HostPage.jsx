@@ -101,10 +101,30 @@ export default function HostPage() {
     sendSyncAll,
     isConnected: syncConnected, // <-- get real socket connection status
     sendTimeUpdate, // <-- Add sendTimeUpdate to the hook
+    getConnectionStatus,
   } = useSyncService(sessionCode, "host", user?.name || "Host");
+
+  // Debug connection status
+  useEffect(() => {
+    console.log("Host sync connection status:", {
+      sessionCode,
+      userName: user?.name || "Host",
+      syncConnected,
+      isConnected,
+      serverUrl:
+        process.env.NEXT_PUBLIC_IO_URL ||
+        "https://aduionize-socket.onrender.com",
+      environment: process.env.NODE_ENV,
+    });
+  }, [sessionCode, user?.name, syncConnected, isConnected]);
 
   // Set up sync service handlers
   useEffect(() => {
+    if (!setMessageHandler || !setClientUpdateHandler) {
+      console.warn("Sync service handlers not ready yet");
+      return;
+    }
+
     setMessageHandler((data) => {
       console.log("Received message:", data);
       if (data.type === "sync") {
@@ -397,6 +417,16 @@ export default function HostPage() {
               <span>{connectedClients.length}</span>
             </div>
             <div className="flex justify-between">
+              <span>Sync Server Status:</span>
+              <span
+                className={`font-medium ${
+                  syncConnected ? "text-green-400" : "text-red-400"
+                }`}
+              >
+                {syncConnected ? "Connected" : "Disconnected"}
+              </span>
+            </div>
+            <div className="flex justify-between">
               <span>Join Link:</span>
               <button
                 onClick={() => {
@@ -408,6 +438,51 @@ export default function HostPage() {
                 Copy Link
               </button>
             </div>
+            {!syncConnected && (
+              <div className="mt-3 p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
+                <p className="text-red-300 text-xs">
+                  ⚠️ Not connected to sync server. Audio controls will be
+                  disabled until connection is established.
+                </p>
+                <p className="text-red-400 text-xs mt-1">
+                  Check browser console for connection details.
+                </p>
+                <button
+                  onClick={async () => {
+                    try {
+                      // Simple connection test by checking if we can reach the server
+                      const serverUrl =
+                        process.env.NEXT_PUBLIC_IO_URL ||
+                        "https://aduionize-socket.onrender.com";
+                      const healthUrl = serverUrl.replace("/socket.io", "");
+
+                      const response = await fetch(healthUrl, {
+                        method: "GET",
+                        mode: "no-cors",
+                      });
+
+                      if (response.type === "opaque" || response.ok) {
+                        toast.success(
+                          `Server is accessible at ${serverUrl}. Connection should work.`
+                        );
+                      } else {
+                        toast.error(
+                          "Server health check failed. Please check if the server is running."
+                        );
+                      }
+                    } catch (error) {
+                      toast.error(
+                        "Connection test failed - server may be down"
+                      );
+                      console.error("Connection test error:", error);
+                    }
+                  }}
+                  className="mt-2 px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
+                >
+                  Test Connection
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

@@ -39,24 +39,28 @@ export const useSyncService = (
   // Connect to sync service
   useEffect(() => {
     if (sessionCode && role && userName && !isConnectedRef.current) {
-      try {
-        console.log("Connecting to sync service:", {
-          sessionCode,
-          role,
-          userName,
-          config: defaultConfig,
-        });
+      const connectToServer = async () => {
+        try {
+          console.log("Connecting to sync service:", {
+            sessionCode,
+            role,
+            userName,
+            config: defaultConfig,
+          });
 
-        // Apply sync configuration
-        syncService.syncTolerance = defaultConfig.syncTolerance;
-        syncService.pingInterval = defaultConfig.pingInterval;
+          // Apply sync configuration
+          syncService.syncTolerance = defaultConfig.syncTolerance;
+          syncService.pingInterval = defaultConfig.pingInterval;
 
-        syncService.connect(sessionCode, role, userName);
-        isConnectedRef.current = true;
-      } catch (error) {
-        console.error("Failed to connect to sync service:", error);
-        toast.error("Failed to connect to sync service");
-      }
+          await syncService.connect(sessionCode, role, userName);
+          isConnectedRef.current = true;
+        } catch (error) {
+          console.error("Failed to connect to sync service:", error);
+          toast.error("Failed to connect to sync service");
+        }
+      };
+
+      connectToServer();
     }
 
     return () => {

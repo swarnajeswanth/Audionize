@@ -1,101 +1,33 @@
+const express = require("express");
 const http = require("http");
 const { Server: IOServer } = require("socket.io");
-const WebSocket = require("ws");
 
-const server = http.createServer();
+const app = express();
+const server = http.createServer(app);
 const io = new IOServer(server, {
   path: "/socket.io",
   cors: {
-    origin: "https://audionize.netlify.app",
+    origin: "https://audionize.netlify.app", // Only allow your frontend
     methods: ["GET", "POST"],
   },
 });
-const wss = new WebSocket.Server({ server, path: "/ws" });
 
-const sessions = {}; // { sessionCode: { host, clients, audioUrl, ... } }
+const PORT = process.env.PORT || 4000;
+const sessions = {}; // { sessionCode: { host: socket, clients: [socket, ...], audio: {url, name, size, type} } }
 
-// --- WebSocket (LAN) ---
-wss.on("connection", (ws) => {
-  ws.on("message", (msg) => {
-    let data;
-    try {
-      data = JSON.parse(msg);
-    } catch {
-      return;
-    }
-    // Example: { type: 'join', session: 'ABC123', role: 'host'|'client', ... }
-    if (data.type === "join") {
-      ws.session = data.session;
-      ws.role = data.role;
-      ws.name = data.name;
-      sessions[data.session] = sessions[data.session] || {
-        clients: [],
-        host: null,
-        audioData: null,
-      };
-      if (data.role === "host") {
-        sessions[data.session].host = ws;
-      } else {
-        sessions[data.session].clients.push(ws);
-        // Notify host about new client
-        if (sessions[data.session].host) {
-          sessions[data.session].host.send(
-            JSON.stringify({
-              type: "client_joined",
-              clientId: ws.id || Date.now(),
-              clientName: data.name,
-              timestamp: Date.now(),
-            })
-          );
-        }
-      }
-    }
-    // Broadcast sync/play/pause/etc. to all in session
-    if (data.type === "sync" && ws.session) {
-      const session = sessions[ws.session];
-      if (session) {
-        (session.clients || []).forEach((client) => {
-          if (client !== ws && client.readyState === WebSocket.OPEN)
-            client.send(msg);
-        });
-      }
-    }
-  });
-  ws.on("close", () => {
-    // Remove from session
-    if (ws.session && sessions[ws.session]) {
-      sessions[ws.session].clients = (
-        sessions[ws.session].clients || []
-      ).filter((c) => c !== ws);
-      if (sessions[ws.session].host === ws) sessions[ws.session].host = null;
-
-      // Notify host about client leaving
-      if (ws.role === "client" && sessions[ws.session].host) {
-        sessions[ws.session].host.send(
-          JSON.stringify({
-            type: "client_left",
-            clientId: ws.id || Date.now(),
-            clientName: ws.name,
-            timestamp: Date.now(),
-          })
-        );
-      }
-    }
-  });
-});
+// Health check endpoints for Render
+app.get("/", (req, res) => res.send("Audionize Sync Server is running!"));
+app.get("/healthz", (req, res) => res.status(200).send("OK"));
+app.get("/status", (req, res) =>
+  res.json({
+    status: "running",
+    activeSessions: Object.keys(sessions).length,
+    timestamp: new Date().toISOString(),
+  })
+);
 
 // --- Socket.IO (Internet) ---
 io.on("connection", (socket) => {
-  console.log("Socket.IO client connected:", socket.id);
-
-  // Handle ping for latency measurement
-  socket.on("ping", (data) => {
-    socket.emit("pong", {
-      sentTime: data.sentTime,
-      serverTime: Date.now(),
-    });
-  });
-
   socket.on("join", ({ session, role, name }) => {
     socket.session = session;
     socket.role = role;
@@ -109,25 +41,20 @@ io.on("connection", (socket) => {
       audio: null,
     };
     if (role === "host") {
-      sessions[session].host = { id: socket.id, name: name, socket: socket };
+      sessions[session].host = socket;
+      // If audio already uploaded, send to host
       if (sessions[session].audio) {
         socket.emit("audio-uploaded", sessions[session].audio);
       }
     } else {
-      sessions[session].clients.push({
-        id: socket.id,
-        name: name,
-        socket: socket,
-      });
+      sessions[session].clients.push(socket);
+      // If audio already uploaded, send to new client
       if (sessions[session].audio) {
         socket.emit("audio-uploaded", sessions[session].audio);
       }
       // Notify host
       if (sessions[session].host) {
-        sessions[session].host.socket.emit("user-joined", {
-          name,
-          id: socket.id,
-        });
+        sessions[session].host.emit("user-joined", { name, id: socket.id });
       }
     }
 
@@ -142,76 +69,78 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("audio_upload", (data) => {
-    console.log("Audio upload received for session:", data.sessionCode);
-    if (socket.session) {
-      // Store audio data in session
-      sessions[socket.session].audioData = data;
-      // Broadcast to all clients in session
-      socket.to(socket.session).emit("audio_sync", data);
+  socket.on("audio_upload", (audio) => {
+    if (socket.session && sessions[socket.session]) {
+      sessions[socket.session].audio = audio;
+      // Broadcast to all clients (except sender)
+      socket.to(socket.session).emit("audio-uploaded", audio);
     }
   });
-
+  // Play command from host
   socket.on("play_command", (data) => {
-    console.log("Play command received for session:", data.sessionCode);
     if (socket.session) {
+      // Broadcast to all clients in the session except sender
       socket.to(socket.session).emit("play_command", data);
     }
   });
 
+  // Pause command from host
   socket.on("pause_command", (data) => {
-    console.log("Pause command received for session:", data.sessionCode);
     if (socket.session) {
       socket.to(socket.session).emit("pause_command", data);
     }
   });
 
+  // Seek command from host
   socket.on("seek_command", (data) => {
-    console.log("Seek command received for session:", data.sessionCode);
     if (socket.session) {
       socket.to(socket.session).emit("seek_command", data);
     }
   });
 
+  // Volume command from host (optional)
   socket.on("volume_command", (data) => {
-    console.log("Volume command received for session:", data.sessionCode);
     if (socket.session) {
       socket.to(socket.session).emit("volume_command", data);
     }
   });
-
-  socket.on("sync_all_command", (data) => {
-    console.log("Sync all command received for session:", data.sessionCode);
+  socket.on("playback-action", (data) => {
     if (socket.session) {
-      socket.to(socket.session).emit("sync_all_command", data);
+      socket.to(socket.session).emit("playback-action", data);
     }
   });
-
-  socket.on("time_update", (data) => {
+  // When a client toggles their mic
+  socket.on("mic-status", ({ isMuted }) => {
     if (socket.session) {
-      // Forward time update to host
-      socket.to(socket.session).emit("time_update", {
-        ...data,
-        clientId: socket.id,
-        clientName: socket.name,
+      // Broadcast to host and all clients in the session
+      io.to(socket.session).emit("mic-status-update", {
+        userId: socket.id,
+        name: socket.name,
+        isMuted,
       });
     }
   });
 
-  socket.on("sync", (data) => {
-    if (socket.session) {
-      socket.to(socket.session).emit("sync", data);
-    }
+  socket.on("mute-client", ({ clientId }) => {
+    io.to(clientId).emit("muted");
+  });
+
+  socket.on("disconnect-client", ({ clientId }) => {
+    io.to(clientId).emit("disconnected");
+    // Optionally, force disconnect:
+    const clientSocket = sessions[socket.session]?.clients.find(
+      (c) => c.id === clientId
+    );
+    if (clientSocket) clientSocket.disconnect(true);
   });
 
   socket.on("disconnect", () => {
-    console.log("Socket.IO client disconnected:", socket.id);
     if (socket.session && sessions[socket.session]) {
       sessions[socket.session].clients = (
         sessions[socket.session].clients || []
-      ).filter((c) => c.socket !== socket);
+      ).filter((c) => c !== socket);
 
-      if (sessions[socket.session].host?.socket === socket) {
+      if (sessions[socket.session].host === socket) {
         sessions[socket.session].host = null;
       }
 
@@ -232,33 +161,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// Health check endpoints for Render
-server.on("request", (req, res) => {
-  if (req.url === "/") {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("Audionize Sync Server is running!");
-  } else if (req.url === "/healthz") {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("OK");
-  } else if (req.url === "/status") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        status: "running",
-        activeSessions: Object.keys(sessions).length,
-        totalConnections: io.engine.clientsCount,
-        timestamp: new Date().toISOString(),
-      })
-    );
-  } else {
-    res.writeHead(404, { "Content-Type": "text/plain" });
-    res.end("Not Found");
-  }
-});
-
-const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`Audionize Sync Server running on port ${PORT}`);
-  console.log(`WebSocket endpoint: ws://localhost:${PORT}/ws`);
-  console.log(`Socket.IO endpoint: http://localhost:${PORT}/socket.io`);
+  console.log(`Audionize Sync Server started on port ${PORT}`);
 });

@@ -67,16 +67,9 @@ export default function ClientPage() {
       dispatch(setSessionCode(urlCode));
       dispatch(setIsClient(true));
 
-      // Check if user has already joined through JoinSessionModal
-      const storedUserName = localStorage.getItem(`audionize_user_${urlCode}`);
-      if (storedUserName) {
-        // User already joined through modal, use stored name
-        setUserName(storedUserName);
-        setShowNameInput(false);
-      } else {
-        // User came directly to URL, show name input
-        setShowNameInput(true);
-      }
+      // Always show name input modal for client page
+      // This ensures consistent UX regardless of how user arrived at the page
+      setShowNameInput(true);
     }
   }, [urlCode, sessionCode, dispatch]);
 
@@ -95,9 +88,10 @@ export default function ClientPage() {
           // Check if session is not too old (within last 24 hours)
           const sessionAge = Date.now() - sessionData.timestamp;
           if (sessionAge < 24 * 60 * 60 * 1000) {
+            // Pre-fill the username but still show the input modal
             setUserName(storedUserName);
             dispatch(setSessionCode(urlCode));
-            setShowNameInput(false);
+            setShowNameInput(true); // Always show name input
             toast.success("Session restored from previous connection");
           } else {
             // Session too old, clear it
@@ -320,8 +314,14 @@ export default function ClientPage() {
 
   // Handle name submission
   const handleNameSubmit = (name) => {
-    setUserName(name);
-    localStorage.setItem(`audionize_user_${sessionCode}`, name);
+    // Validate that name is not empty
+    if (!name || !name.trim()) {
+      toast.error("Please enter a valid name");
+      return;
+    }
+
+    setUserName(name.trim());
+    localStorage.setItem(`audionize_user_${sessionCode}`, name.trim());
     setShowNameInput(false);
     setIsConnecting(true);
 
@@ -397,6 +397,7 @@ export default function ClientPage() {
           isOpen={true}
           onClose={() => {}} // Can't close, must enter name
           onSubmit={handleNameSubmit}
+          initialValue={userName} // Pre-fill with existing username if available
         />
       </div>
     );

@@ -1,9 +1,19 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AnimatedModal from "./AnimatedModal";
 
-export default function NameInputModal({ isOpen, onClose, onSubmit }) {
-  const [name, setName] = useState("");
+export default function NameInputModal({
+  isOpen,
+  onClose,
+  onSubmit,
+  initialValue = "",
+}) {
+  const [name, setName] = useState(initialValue);
   const [error, setError] = useState("");
+
+  // Update name when initialValue changes
+  useEffect(() => {
+    setName(initialValue);
+  }, [initialValue]);
 
   const handleSubmit = (e) => {
     e.preventDefault();

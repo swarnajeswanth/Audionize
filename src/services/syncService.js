@@ -19,7 +19,110 @@ class SyncService {
     this.pingInterval = null;
   }
 
-  connect(sessionCode, role, userName) {
+  // Health check method to test server accessibility
+  async checkServerHealth() {
+    // Skip health check if we're in a Node.js environment (server-side rendering)
+    if (typeof window === "undefined") {
+      console.log("Skipping health check in server environment");
+      return {
+        isHealthy: true,
+        serverUrl:
+          process.env.NEXT_PUBLIC_IO_URL ||
+          "https://aduionize-socket.onrender.com",
+      };
+    }
+
+    const primaryServerUrl =
+      process.env.NEXT_PUBLIC_IO_URL || "https://aduionize-socket.onrender.com";
+    const localServerUrl = "http://localhost:4000";
+    const fallbackServerUrl = "https://your-fallback-server.onrender.com"; // Add your fallback server here
+
+    // Determine which servers to try based on environment
+    let servers = [primaryServerUrl];
+
+    if (process.env.NODE_ENV === "development") {
+      servers = [localServerUrl, primaryServerUrl, fallbackServerUrl];
+    } else {
+      servers = [primaryServerUrl, fallbackServerUrl];
+    }
+
+    for (const serverUrl of servers) {
+      const healthUrl = serverUrl.replace("/socket.io", "");
+
+      try {
+        console.log(`Checking server health at: ${healthUrl}`);
+
+        // Try with different approaches
+        let response;
+
+        // First try with CORS mode
+        try {
+          response = await fetch(healthUrl, {
+            method: "GET",
+            mode: "cors",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+        } catch (corsError) {
+          console.log(`CORS failed for ${healthUrl}, trying without CORS`);
+
+          // Try without CORS mode
+          try {
+            response = await fetch(healthUrl, {
+              method: "GET",
+              mode: "no-cors",
+            });
+          } catch (noCorsError) {
+            console.log(`No-CORS also failed for ${healthUrl}`);
+            continue; // Try next server
+          }
+        }
+
+        if (response.ok || response.type === "opaque") {
+          let data = "";
+          try {
+            data = await response.text();
+          } catch (textError) {
+            data = "Server responded (no-cors)";
+          }
+          console.log(`✅ Server health check passed for ${serverUrl}:`, data);
+          return { isHealthy: true, serverUrl };
+        } else {
+          console.error(
+            `❌ Server health check failed for ${serverUrl}:`,
+            response.status,
+            response.statusText
+          );
+        }
+      } catch (error) {
+        console.error(
+          `❌ Server health check error for ${serverUrl}:`,
+          error.message
+        );
+
+        // If it's a network error, try to connect directly with Socket.IO
+        if (
+          error.message.includes("Failed to fetch") ||
+          error.message.includes("NetworkError")
+        ) {
+          console.log(`Attempting direct Socket.IO connection to ${serverUrl}`);
+          return { isHealthy: true, serverUrl }; // Assume server is up if we can't fetch but can try Socket.IO
+        }
+      }
+    }
+
+    console.error("❌ All servers are not accessible");
+    return { isHealthy: false, serverUrl: null };
+  }
+
+  async connect(sessionCode, role, userName) {
+    // Skip connection if we're in a Node.js environment (server-side rendering)
+    if (typeof window === "undefined") {
+      console.log("Skipping connection in server environment");
+      return;
+    }
+
     // Disconnect existing connection if any
     if (this.socket) {
       this.disconnect();
@@ -29,16 +132,94 @@ class SyncService {
     this.role = role;
     this.userName = userName;
 
-    this.socket = io(
-      process.env.NEXT_PUBLIC_IO_URL || "https://aduionize-socket.onrender.com",
-      {
+    // Determine server URL based on environment
+    let serverUrl = process.env.NEXT_PUBLIC_IO_URL;
+
+    if (!serverUrl) {
+      // Check if we're in development
+      if (process.env.NODE_ENV === "development") {
+        serverUrl = "http://localhost:4000"; // Local development server
+        console.log("🔧 Development mode detected, using local server");
+      } else {
+        serverUrl = "https://aduionize-socket.onrender.com"; // Production server
+        console.log("🚀 Production mode detected, using remote server");
+      }
+    }
+
+    // Ensure serverUrl has the correct format
+    if (!serverUrl.startsWith("http://") && !serverUrl.startsWith("https://")) {
+      serverUrl = `https://${serverUrl}`;
+    }
+
+    // Remove trailing slash if present
+    serverUrl = serverUrl.replace(/\/$/, "");
+
+    console.log(`Attempting to connect to sync server: ${serverUrl}`);
+    console.log(`Environment: ${process.env.NODE_ENV}`);
+    console.log(`NEXT_PUBLIC_IO_URL: ${process.env.NEXT_PUBLIC_IO_URL}`);
+
+    // Try health check first, but don't fail if it doesn't work
+    try {
+      const healthCheck = await this.checkServerHealth();
+      if (healthCheck.isHealthy) {
+        console.log(
+          `✅ Health check passed, using server: ${healthCheck.serverUrl}`
+        );
+      } else {
+        console.log(
+          `⚠️ Health check failed, but attempting Socket.IO connection anyway`
+        );
+      }
+    } catch (healthError) {
+      console.log(
+        `⚠️ Health check error, but attempting Socket.IO connection anyway:`,
+        healthError.message
+      );
+    }
+
+    // Always try to connect with Socket.IO, even if health check failed
+    console.log("Creating Socket.IO connection with options:", {
+      serverUrl,
+      path: "/socket.io",
+      transports: ["websocket", "polling"],
+      timeout: 20000,
+      forceNew: true,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
+
+    try {
+      this.socket = io(serverUrl, {
         path: "/socket.io",
         transports: ["websocket", "polling"],
-      }
-    );
+        timeout: 20000, // 20 second timeout
+        forceNew: true,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+      });
+    } catch (connectionError) {
+      console.error(
+        "❌ Failed to create Socket.IO connection:",
+        connectionError
+      );
+      console.error("Connection creation details:", {
+        serverUrl,
+        error: connectionError?.message || "Unknown error",
+        stack: connectionError?.stack,
+      });
+      return;
+    }
+
+    // Connection event handlers
+    if (!this.socket) {
+      console.error("❌ Socket not created, cannot set up event handlers");
+      return;
+    }
 
     this.socket.on("connect", () => {
-      console.log("Connected to sync server");
+      console.log("✅ Connected to sync server successfully");
       this.isConnected = true;
 
       // Start ping-pong for latency measurement
@@ -52,8 +233,47 @@ class SyncService {
       });
     });
 
-    this.socket.on("disconnect", () => {
-      console.log("Disconnected from sync server");
+    this.socket.on("connect_error", (error) => {
+      console.error("❌ Connection error:", error);
+      console.error("Connection details:", {
+        serverUrl: serverUrl || "unknown",
+        error: error?.message || "Unknown error",
+        type: error?.type || "unknown",
+        description: error?.description || "No description",
+        errorObject: error,
+      });
+      this.isConnected = false;
+    });
+
+    this.socket.on("disconnect", (reason) => {
+      console.log("🔌 Disconnected from sync server:", reason);
+      this.isConnected = false;
+
+      if (reason === "io server disconnect") {
+        // Server disconnected us, try to reconnect
+        console.log("Server disconnected, attempting to reconnect...");
+        this.socket.connect();
+      }
+    });
+
+    this.socket.on("reconnect", (attemptNumber) => {
+      console.log(`🔄 Reconnected after ${attemptNumber} attempts`);
+      this.isConnected = true;
+
+      // Re-join the session after reconnection
+      this.socket.emit("join", {
+        session: sessionCode,
+        role: role,
+        name: userName,
+      });
+    });
+
+    this.socket.on("reconnect_error", (error) => {
+      console.error("❌ Reconnection error:", error);
+    });
+
+    this.socket.on("reconnect_failed", () => {
+      console.error("❌ Reconnection failed after all attempts");
       this.isConnected = false;
     });
 
@@ -299,6 +519,12 @@ class SyncService {
 
   // Disconnect
   disconnect() {
+    // Skip disconnect if we're in a Node.js environment (server-side rendering)
+    if (typeof window === "undefined") {
+      console.log("Skipping disconnect in server environment");
+      return;
+    }
+
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
@@ -325,6 +551,10 @@ class SyncService {
 
   // Get connection status
   getConnectionStatus() {
+    // Return false if we're in a Node.js environment (server-side rendering)
+    if (typeof window === "undefined") {
+      return false;
+    }
     return this.isConnected && this.socket !== null;
   }
 }
