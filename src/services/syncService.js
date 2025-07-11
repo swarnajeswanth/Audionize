@@ -535,18 +535,17 @@ class SyncService {
 
   setOnClientUpdate(callback) {
     this.onClientUpdateCallback = callback;
-    if (this.socket) {
-      // Remove previous listeners to prevent stacking
-      this.socket.off("user-joined");
-      this.socket.off("user-left");
-      if (callback) {
-        this.socket.on("user-joined", (data) => {
-          callback({ type: "joined", client: data });
-        });
-        this.socket.on("user-left", (data) => {
-          callback({ type: "left", clientId: data.id });
-        });
-      }
+    if (!this.socket) return; // Prevent null errors
+    // Remove previous listeners to prevent stacking
+    this.socket.off("user-joined");
+    this.socket.off("user-left");
+    if (callback) {
+      this.socket.on("user-joined", (data) => {
+        callback({ type: "joined", client: data });
+      });
+      this.socket.on("user-left", (data) => {
+        callback({ type: "left", clientId: data.id });
+      });
     }
   }
 
