@@ -10,6 +10,7 @@ import HostPage from "../components/HostPage";
 import SettingsPage from "../components/SettingsPage";
 import AuthCheck from "../components/AuthCheck";
 import LoadingState from "../components/LoadingState";
+import NameInputModal from "../components/NameInputModal";
 
 const PAGES = ["home", "host", "settings"];
 
@@ -25,6 +26,9 @@ export default function Audionize() {
   const [page, setPage] = useState("home");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const particlesRef = useRef();
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [pendingJoinCode, setPendingJoinCode] = useState(null);
+  const [joinError, setJoinError] = useState("");
 
   // Sync NextAuth session with Redux (but don't redirect)
   useEffect(() => {
@@ -42,14 +46,24 @@ export default function Audionize() {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
       if (code) {
-        // Dispatch to your store or set state as needed
         dispatch(setSessionCode(code));
-        // Optionally, show a join modal or trigger join logic here
-        // setShowNameModal(true); // Uncomment if you have a modal
-        setPage("home"); // Or whatever page should handle the join
+        if (!isAuthenticated) {
+          setPendingJoinCode(code);
+          setShowNameModal(true);
+        }
+        // If authenticated, auto-join (handled by HomePage/Redux)
+        setPage("home");
       }
     }
-  }, [dispatch]);
+  }, [dispatch, isAuthenticated]);
+
+  const handleJoinWithName = (name) => {
+    // Here you would dispatch an action to join the session with the name
+    // For now, just close the modal
+    setShowNameModal(false);
+    setJoinError("");
+    // Example: dispatch(joinSessionWithName(pendingJoinCode, name));
+  };
 
   // Show loading while checking authentication
   if (status === "loading") {
@@ -73,6 +87,12 @@ export default function Audionize() {
 
   return (
     <div className="relative overflow-x-hidden min-h-screen font-[Inter,sans-serif] text-slate-200">
+      {/* Join Modal */}
+      <NameInputModal
+        isOpen={showNameModal}
+        onClose={() => setShowNameModal(false)}
+        onSubmit={handleJoinWithName}
+      />
       {/* Main app container */}
       <div className="min-h-screen flex flex-col">
         {/* Navigation */}

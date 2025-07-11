@@ -10,7 +10,7 @@ import {
 import toast from "react-hot-toast";
 import { useAuth } from "../store/hooks";
 
-export default function VoiceChat({ sessionCode, mode }) {
+export default function VoiceChat({ sessionCode }) {
   const [isPressed, setIsPressed] = useState(false);
   const [showParticipants, setShowParticipants] = useState(false);
 
@@ -42,20 +42,7 @@ export default function VoiceChat({ sessionCode, mode }) {
   const canSpeak = me?.canSpeak ?? true; // Default true for host or if not set
   const isHost = user?.role === "host";
 
-  // LAN/Internet mic permissions
-  if (mode === "internet" && !isAuthenticated) {
-    return (
-      <div className="fixed bottom-6 right-6 z-50 bg-slate-900/90 backdrop-blur-lg rounded-2xl p-6 border border-white/20 shadow-2xl text-center">
-        <h3 className="text-white font-medium mb-2">Voice Chat</h3>
-        <p className="text-red-400 mb-2">
-          Login required to use voice chat over the Internet.
-        </p>
-        <a href="/auth/signin" className="underline text-blue-400">
-          Sign in
-        </a>
-      </div>
-    );
-  }
+  // Remove LAN/Internet mic permissions logic
 
   if (isKicked) {
     return (

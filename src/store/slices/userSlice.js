@@ -18,7 +18,6 @@ const initialState = {
   rememberCredentials: false,
   preferences: {
     autoConnect: true,
-    defaultMode: "lan", // 'lan' or 'internet'
     audioQuality: "high", // 'low', 'medium', 'high'
     notifications: true,
   },
