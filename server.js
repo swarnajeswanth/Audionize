@@ -77,7 +77,5 @@ io.on("connection", (socket) => {
 });
 
 server.listen(4000, () => {
-  console.log("Server running on http://localhost:4000");
-  console.log("WebSocket path: ws://localhost:4000/ws");
-  console.log("Socket.IO path: http://localhost:4000/socket.io");
+  // Server started successfully
 });

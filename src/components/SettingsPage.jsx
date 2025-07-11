@@ -1,4 +1,7 @@
+"use client";
+import { useState } from "react";
 export default function SettingsPage() {
+  const [bufferSize, setBufferSize] = useState("Medium (Balanced)");
   return (
     <div className="max-w-4xl mx-auto">
       <h1 className="text-3xl md:text-4xl font-bold mb-6 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
@@ -67,9 +70,13 @@ export default function SettingsPage() {
           <label className="block text-sm font-medium text-slate-300 mb-2">
             Buffer Size
           </label>
-          <select className="bg-slate-700/50 border border-slate-600 rounded px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+          <select
+            className="bg-slate-700/50 border border-slate-600 rounded px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            value={bufferSize}
+            onChange={(e) => setBufferSize(e.target.value)}
+          >
             <option>Small (Faster sync, may stutter)</option>
-            <option selected>Medium (Balanced)</option>
+            <option>Medium (Balanced)</option>
             <option>Large (Smoother, more latency)</option>
           </select>
         </div>
@@ -161,7 +168,7 @@ export default function SettingsPage() {
           <label className="block text-sm font-medium text-slate-300 mb-2">
             App Version
           </label>
-          <p className="text-sm">SyncSound v1.0.0</p>
+          <p className="text-sm">Audionize v1.0.0</p>
         </div>
       </div>
     </div>

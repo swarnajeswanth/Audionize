@@ -1,51 +1,120 @@
-import { useSession, signIn } from "next-auth/react";
-import { useEffect, useState } from "react";
-import QRCode from "react-qr-code";
+"use client";
+import { useEffect, useState, useRef } from "react";
+
 import { useLanSync } from "../hooks/useLanSync";
 import { useInternetSync } from "../hooks/useInternetSync";
 import toast from "react-hot-toast";
 import { getPrivateIp } from "../utils/getPrivateIp";
 import { getPublicIp } from "../utils/getPublicIp";
+import {
+  useAuth,
+  useSession as useSessionStore,
+  useAudio,
+  useSync,
+  useAppDispatch,
+  useSelector,
+} from "../store/hooks";
+import {
+  setPrivateIp,
+  setPublicIp,
+  generateSessionCode,
+  setMode,
+} from "../store/slices/sessionSlice";
+import {
+  setAudioFile,
+  setAudioUrl,
+  setPlaying,
+  setCurrentTime,
+  setDuration,
+  play,
+  pause,
+  seekTo,
+} from "../store/slices/audioSlice";
+import {
+  setConnected,
+  setSyncStatus,
+  addConnectedClient,
+  setIsHost,
+  setMuted,
+  setSyncStatusForClient,
+} from "../store/slices/syncSlice";
+import { useLoadingState } from "../hooks/useLoadingState";
+import LoadingState from "./LoadingState";
+import VoiceChat from "./VoiceChat";
+import voiceChatService from "../services/voiceChatService";
+import AnimatedModal from "./AnimatedModal";
+import FeatureSelectionModal from "./FeatureSelectionModal";
 
 export default function HostPage() {
-  const { data: session, status } = useSession();
-  const [audio, setAudio] = useState(null);
+  const dispatch = useAppDispatch();
+  const { user, isAuthenticated } = useAuth();
+  const { sessionCode, mode, privateIp, publicIp } = useSessionStore();
+  const { audioFile, audioUrl, isPlaying, currentTime, duration } = useAudio();
+  const { isConnected, connectedClients } = useSync();
   const [progress, setProgress] = useState(0);
-  const [mode, setMode] = useState("lan"); // 'lan' or 'internet'
   const [log, setLog] = useState([]);
   const waveformRef = useRef();
-  const [audioUrl, setAudioUrl] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const audioRef = useRef();
-  const [privateIp, setPrivateIp] = useState(null);
-  const [publicIp, setPublicIp] = useState(null);
-  // Placeholder session code and join links
-  const sessionCode = "YOUR_SESSION_CODE";
+  const hasShownInitialConnection = useRef(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [connectivityType, setConnectivityType] = useState("lan");
+  const [showFeatureModal, setShowFeatureModal] = useState(true);
+  const [selectedFeature, setSelectedFeature] = useState(null);
+
+  // Generate 6-digit LAN code
+  const generateLANCode = () => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  };
+
+  const lanCode = sessionCode || generateLANCode();
+  const internetLink = `https://your-domain.com/join?session=${sessionCode}&ip=${publicIp}`;
+
+  // Handle feature selection
+  const handleFeatureSelect = (feature) => {
+    setSelectedFeature(feature);
+    dispatch(setMode(feature));
+
+    // Generate session code if not exists
+    if (!sessionCode) {
+      const newCode = generateLANCode();
+      dispatch(generateSessionCode(newCode));
+    }
+
+    // Sync services will automatically connect when sessionCode and mode are set
+    toast.success(`${feature.toUpperCase()} session started!`);
+  };
+
+  // Loading states
+  const ipDetectionState = useLoadingState();
+  const audioUploadState = useLoadingState();
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      getPrivateIp().then(setPrivateIp);
-      getPublicIp().then(setPublicIp);
+      ipDetectionState.startLoading("Detecting network...");
+
+      // Get IP addresses with error handling
+      Promise.all([
+        getPrivateIp().catch((error) => {
+          console.warn("Failed to get private IP:", error);
+          return "localhost";
+        }),
+        getPublicIp().catch((error) => {
+          console.warn("Failed to get public IP:", error);
+          return "your-public-ip.com";
+        }),
+      ])
+        .then(([privateIp, publicIp]) => {
+          dispatch(setPrivateIp(privateIp));
+          dispatch(setPublicIp(publicIp));
+          ipDetectionState.setSuccess("Network detected");
+        })
+        .catch((error) => {
+          ipDetectionState.setError(error, "Network detection failed");
+        });
     }
-  }, []);
+  }, [dispatch]);
 
-  if (status === "loading") return <p>Loading...</p>;
-  if (!session)
-    return (
-      <div>
-        <p>You must be signed in to host a session.</p>
-        <button onClick={() => signIn("google")}>Sign in with Google</button>
-      </div>
-    );
-
-  const lanLink = privateIp
-    ? `ws://${privateIp}:4000/ws?session=${sessionCode}`
-    : "Detecting LAN IP...";
-  const publicLink = publicIp
-    ? `ws://${publicIp}:4000/ws?session=${sessionCode}`
-    : "Detecting Public IP...";
+  // Authentication is handled by middleware, so if we reach here, user is authenticated
 
   // Sync hooks
   const lanSync = useLanSync(sessionCode, "host", (data) =>
@@ -76,25 +145,25 @@ export default function HostPage() {
     return () => {
       container.innerHTML = "";
     };
-  }, [audio]);
+  }, [audioFile]);
 
   useEffect(() => {
-    if (!audio) return;
+    if (!audioFile) return;
     const interval = setInterval(() => {
       setProgress((p) => (p >= 100 ? 0 : p + 0.5));
     }, 1000);
     return () => clearInterval(interval);
-  }, [audio]);
+  }, [audioFile]);
 
   useEffect(() => {
-    if (audio) {
-      const url = URL.createObjectURL(audio);
-      setAudioUrl(url);
+    if (audioFile) {
+      const url = URL.createObjectURL(audioFile);
+      dispatch(setAudioUrl(url));
       return () => URL.revokeObjectURL(url);
     } else {
-      setAudioUrl(null);
+      dispatch(setAudioUrl(null));
     }
-  }, [audio]);
+  }, [audioFile, dispatch]);
 
   // Broadcast playback state
   const broadcast = (type, time) => {
@@ -114,21 +183,24 @@ export default function HostPage() {
 
   // Handle play/pause/seek events
   const handlePlay = () => {
-    setIsPlaying(true);
+    dispatch(play());
     broadcast("play", audioRef.current.currentTime);
     audioRef.current.play();
+    broadcastPlayback("play", audioRef.current.currentTime);
   };
   const handlePause = () => {
-    setIsPlaying(false);
+    dispatch(pause());
     broadcast("pause", audioRef.current.currentTime);
     audioRef.current.pause();
+    broadcastPlayback("pause", audioRef.current.currentTime);
   };
   const handleSeek = (e) => {
     const time = parseFloat(e.target.value);
-    setCurrentTime(time);
+    dispatch(seekTo(time));
     audioRef.current.currentTime = time;
     broadcast("seek", time);
     audioRef.current.play(); // Ensure playback resumes after seek
+    broadcastPlayback("seek", time);
   };
 
   // Ensure playback resumes after receiving a sync event if isPlaying is true
@@ -142,271 +214,523 @@ export default function HostPage() {
   // Update currentTime as audio plays
   useEffect(() => {
     if (!audioRef.current) return;
-    const onTimeUpdate = () => setCurrentTime(audioRef.current.currentTime);
+    const onTimeUpdate = () =>
+      dispatch(setCurrentTime(audioRef.current.currentTime));
     audioRef.current.addEventListener("timeupdate", onTimeUpdate);
     return () =>
       audioRef.current.removeEventListener("timeupdate", onTimeUpdate);
-  }, [audioUrl]);
+  }, [audioUrl, dispatch]);
 
   // Update duration when metadata loads
   useEffect(() => {
     if (!audioRef.current) return;
-    const onLoaded = () => setDuration(audioRef.current.duration || 0);
+    const onLoaded = () =>
+      dispatch(setDuration(audioRef.current.duration || 0));
     audioRef.current.addEventListener("loadedmetadata", onLoaded);
     return () =>
       audioRef.current.removeEventListener("loadedmetadata", onLoaded);
-  }, [audioUrl]);
+  }, [audioUrl, dispatch]);
 
-  // Example: Notify when a device connects/disconnects (simulate for now)
+  // Track device connections using Redux state
   useEffect(() => {
-    // Simulate device connect/disconnect
-    toast.success("Device connected");
-    // To simulate disconnect: toast.error("Device disconnected");
-  }, []);
+    // Set as host when component mounts
+    dispatch(setIsHost(true));
 
-  // Notify on sync events
-  useEffect(() => {
-    if (!audio) return;
-    if (isPlaying) toast("Playback started");
-    else toast("Playback paused");
-  }, [isPlaying]);
+    // Simulate initial connection (in real app, this would come from WebSocket/WebRTC)
+    // For now, we'll simulate a device connecting after a short delay
+    const timer = setTimeout(() => {
+      if (!isConnected) {
+        dispatch(setConnected(true));
+        dispatch(setSyncStatus("connected"));
+        dispatch(
+          addConnectedClient({
+            id: "demo-client-1",
+            name: "Demo Device",
+            status: "connected",
+            currentTime: 0,
+            drift: 0,
+            lastUpdate: new Date().toISOString(),
+          })
+        );
+      }
+    }, 2000);
 
-  // Notify on seek
+    return () => {
+      clearTimeout(timer);
+      dispatch(setIsHost(false));
+    };
+  }, [dispatch, isConnected]);
+
+  // Handle actual device connections - only show toast for new connections
   useEffect(() => {
-    if (!audio) return;
-    toast("Seeked to " + Math.floor(currentTime) + "s");
-  }, [currentTime]);
+    // Track previous client count to detect new connections
+    const previousClientCount = hasShownInitialConnection.current;
+
+    if (connectedClients.length > previousClientCount) {
+      // New device connected
+      const newClient = connectedClients[connectedClients.length - 1];
+      toast.success(`${newClient.name} connected`);
+    }
+
+    // Update the ref to current count
+    hasShownInitialConnection.current = connectedClients.length;
+  }, [connectedClients.length]);
+
+  // Sync status updates (no toasts for these - they're shown in the UI)
+  useEffect(() => {
+    // In a real app, you'd update sync status here
+    // For now, we just track the state without showing toasts
+  }, [isPlaying, currentTime, audioFile]);
 
   // Notify if all clients are synced (simulate for now)
   // In a real app, track client sync status from server
   // toast.success("All devices synced");
   // toast.error("Some devices out of sync");
 
+  // Audio upload handler
+  const handleAudioUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      dispatch(setAudioFile(file));
+      const url = URL.createObjectURL(file);
+      dispatch(setAudioUrl(url));
+      voiceChatService.sendMessage({
+        type: "audio_file_update",
+        url,
+        name: file.name,
+        size: file.size,
+        mime: file.type,
+      });
+    }
+  };
+
+  // Modern player controls
+  const [playerVolume, setPlayerVolume] = useState(1);
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = playerVolume;
+  }, [playerVolume]);
+
+  // Sync Music button handler
+  const handleSyncMusic = () => {
+    if (audioRef.current) {
+      const time = audioRef.current.currentTime;
+      voiceChatService.sendMessage({
+        type: "sync_and_play",
+        time,
+      });
+      toast.success("Sync command sent to all devices!");
+    }
+  };
+
+  // Broadcast playback state
+  const broadcastPlayback = (action, time) => {
+    voiceChatService.sendMessage({
+      type: "playback_update",
+      action,
+      time,
+    });
+  };
+
+  const handleMuteClient = (userId) => {
+    dispatch(
+      setMuted({
+        userId,
+        isMuted: !connectedClients.find((c) => c.userId === userId)?.isMuted,
+      })
+    );
+    toast.success(
+      `${
+        connectedClients.find((c) => c.userId === userId)?.name || userId
+      } muted`
+    );
+  };
+
+  const handleDisconnectClient = (userId) => {
+    if (
+      window.confirm(
+        `Are you sure you want to disconnect ${
+          connectedClients.find((c) => c.userId === userId)?.name || userId
+        }?`
+      )
+    ) {
+      dispatch(setConnected(false));
+      dispatch(setSyncStatus("disconnected"));
+      dispatch(
+        addConnectedClient({
+          id: userId,
+          name:
+            connectedClients.find((c) => c.userId === userId)?.name || userId,
+          status: "disconnected",
+          currentTime: 0,
+          drift: 0,
+          lastUpdate: new Date().toISOString(),
+        })
+      );
+      toast.success(
+        `${
+          connectedClients.find((c) => c.userId === userId)?.name || userId
+        } disconnected`
+      );
+    }
+  };
+
+  // Show connectivity selection modal immediately after login if mode is not set
+  useEffect(() => {
+    if (!mode) {
+      setShowInviteModal(false);
+    } else {
+      setShowInviteModal(true);
+    }
+  }, [mode]);
+
+  // Connectivity type selection modal
+  if (!mode) {
+    return (
+      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+        <div className="bg-slate-800 rounded-xl p-8 shadow-xl text-center">
+          <h2 className="text-xl font-bold mb-4 text-white">
+            Select Connectivity Type
+          </h2>
+          <div className="flex gap-6 justify-center">
+            <button
+              className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold"
+              onClick={() => dispatch(setMode("lan"))}
+            >
+              LAN (Local Network)
+            </button>
+            <button
+              className="bg-purple-500 hover:bg-purple-600 text-white px-6 py-3 rounded-lg font-semibold"
+              onClick={() => dispatch(setMode("internet"))}
+            >
+              Internet (Public)
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Check for missing connectivity info
+  const hasPublicIP =
+    publicIp &&
+    publicIp !== "Not detected" &&
+    !publicIp.includes("your-public-ip");
+  const hasLANCode = sessionCode && sessionCode !== "Not detected";
+
   return (
     <div className="max-w-4xl mx-auto">
       <h1 className="text-3xl md:text-4xl font-bold mb-6 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
         Host Session
       </h1>
-      <div className="bg-slate-800/70 border border-white/10 p-6 rounded-xl mb-6">
-        <h2 className="text-xl font-semibold mb-4">Select Audio</h2>
-        <div className="flex flex-col md:flex-row gap-4 mb-6">
-          <button
-            onClick={() => document.getElementById("audio-upload").click()}
-            className="flex-1 bg-slate-700/50 hover:bg-slate-600/50 transition p-4 rounded-lg flex items-center justify-center"
+
+      {/* Feature Selection Modal */}
+      <FeatureSelectionModal
+        isOpen={showFeatureModal}
+        onClose={() => setShowFeatureModal(false)}
+        onSelect={handleFeatureSelect}
+      />
+
+      {/* Show content only after feature selection */}
+      {selectedFeature && (
+        <>
+          {/* Connection Status */}
+          <LoadingState
+            loading={ipDetectionState.loading}
+            error={ipDetectionState.error}
+            success={ipDetectionState.success}
+            size="small"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6 mr-2"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-              />
-            </svg>
-            Upload Audio
-          </button>
-          <input
-            type="file"
-            id="audio-upload"
-            accept="audio/*"
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files.length > 0) setAudio(e.target.files[0]);
-            }}
-          />
-          <button className="flex-1 bg-slate-700/50 hover:bg-slate-600/50 transition p-4 rounded-lg flex items-center justify-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6 mr-2"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-              />
-            </svg>
-            Use Microphone
-          </button>
-        </div>
-        {audio && (
-          <div className="mt-4">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-medium">{audio.name}</h3>
-                <p className="text-sm text-slate-400">Audio Selected</p>
-              </div>
-              <button
-                onClick={() => setAudio(null)}
-                className="text-blue-400 hover:text-blue-300"
-              >
-                Change
-              </button>
+            <div className="bg-slate-800/40 backdrop-blur-md border border-white/20 p-6 rounded-xl mb-6">
+              <h2 className="text-xl font-semibold mb-4 text-white">
+                {selectedFeature === "lan"
+                  ? "LAN Connection"
+                  : "Internet Connection"}
+              </h2>
+
+              {selectedFeature === "lan" ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-300">LAN Code:</span>
+                    <span className="text-2xl font-mono bg-slate-900 px-4 py-2 rounded text-blue-300">
+                      {lanCode}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-300">Network:</span>
+                    <span className="text-slate-300">
+                      {privateIp || "Detecting..."}
+                    </span>
+                  </div>
+
+                  {(!privateIp || privateIp === "localhost") && (
+                    <div className="mt-2 p-2 bg-yellow-900/30 rounded text-xs text-yellow-200">
+                      <strong>LAN IP not detected?</strong> Try:
+                      <ul className="mt-1 ml-4 list-disc">
+                        <li>Check if you're on the same WiFi network</li>
+                        <li>Allow camera/microphone permissions</li>
+                        <li>Try refreshing the page</li>
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-300">Public IP:</span>
+                    <span className="text-slate-300">
+                      {publicIp || "Detecting..."}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-300">Session ID:</span>
+                    <span className="text-slate-300">{sessionCode}</span>
+                  </div>
+
+                  {!hasPublicIP && (
+                    <div className="mt-2 p-2 bg-red-900/30 rounded text-xs text-red-200">
+                      <strong>Public IP not detected!</strong> Internet sharing
+                      may not work.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            {/* Audio player and controls */}
-            <audio
-              ref={audioRef}
-              src={audioUrl}
-              className="w-full mb-2"
-              onPlay={handlePlay}
-              onPause={handlePause}
-              onSeeked={(e) =>
-                handleSeek({ target: { value: audioRef.current.currentTime } })
-              }
-            />
-            <div className="flex items-center gap-4 mb-2">
-              <button
-                onClick={handlePlay}
-                disabled={isPlaying}
-                className="bg-blue-500 hover:bg-blue-600 rounded-full p-2 text-white"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              </button>
-              <button
-                onClick={handlePause}
-                disabled={!isPlaying}
-                className="bg-slate-600 hover:bg-slate-700 rounded-full p-2 text-white"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M10 9v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                  />
-                </svg>
-              </button>
-              <input
-                type="range"
-                min={0}
-                max={duration}
-                step={0.01}
-                value={currentTime}
-                onChange={handleSeek}
-                className="w-full accent-blue-500"
-              />
-              <span className="text-xs text-slate-400">
-                {Math.floor(currentTime / 60)}:
-                {String(Math.floor(currentTime % 60)).padStart(2, "0")}
-              </span>
-              <span className="text-xs text-slate-400">
-                / {Math.floor(duration / 60)}:
-                {String(Math.floor(duration % 60)).padStart(2, "0")}
-              </span>
-            </div>
-            {/* Mode toggle */}
-            <div className="flex gap-4 mb-4">
-              <button
-                onClick={() => setMode("lan")}
-                className={`px-4 py-2 rounded ${
-                  mode === "lan"
-                    ? "bg-blue-500 text-white"
-                    : "bg-slate-700 text-slate-300"
-                }`}
-              >
-                LAN
-              </button>
-              <button
-                onClick={() => setMode("internet")}
-                className={`px-4 py-2 rounded ${
-                  mode === "internet"
-                    ? "bg-blue-500 text-white"
-                    : "bg-slate-700 text-slate-300"
-                }`}
-              >
-                Internet
-              </button>
-            </div>
-            {/* QR Code and join link for selected mode */}
-            <div className="flex flex-col items-center gap-2 mt-2">
-              <QRCode
-                value={mode === "lan" ? lanLink : publicLink}
-                size={128}
-                bgColor="#1e293b"
-                fgColor="#8b5cf6"
-              />
-              <div className="flex items-center gap-2 mt-2">
-                <input
-                  type="text"
-                  value={mode === "lan" ? lanLink : publicLink}
-                  readOnly
-                  className="bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-xs text-slate-300 w-56"
-                  onFocus={(e) => e.target.select()}
-                />
-                <button
-                  className="bg-blue-500 hover:bg-blue-600 px-2 py-1 rounded text-xs text-white"
-                  onClick={() =>
-                    navigator.clipboard.writeText(
-                      mode === "lan" ? lanLink : publicLink
-                    )
-                  }
-                >
-                  Copy
-                </button>
-              </div>
-              <span className="text-xs text-slate-400">
-                Scan or share this link to join your session (
-                {mode === "lan" ? "LAN" : "Internet"})
-              </span>
-            </div>
-            {/* Play button for demo sync */}
-            <div className="mt-6 flex flex-col items-center">
-              <button
-                className="bg-green-500 hover:bg-green-600 px-6 py-2 rounded text-white font-semibold mb-2"
-                onClick={() =>
-                  sendSync({
-                    type: "sync",
-                    action: "play",
-                    timestamp: Date.now(),
-                  })
-                }
-              >
-                Play (Send Sync)
-              </button>
-              <div className="w-full max-w-md bg-slate-900/60 rounded p-2 text-xs text-slate-300 mt-2 h-24 overflow-y-auto">
-                <div>Sync Log:</div>
-                {log.slice(-5).map((msg, i) => (
-                  <div key={i}>{msg}</div>
-                ))}
-              </div>
+          </LoadingState>
+
+          {/* Connection Info Section */}
+          <div className="bg-slate-800/40 backdrop-blur-md border border-white/20 p-6 rounded-xl mb-6">
+            <h3 className="text-lg font-semibold mb-4 text-white">
+              {selectedFeature === "lan"
+                ? "LAN Connection"
+                : "Internet Connection"}
+            </h3>
+
+            <div className="flex flex-col gap-4">
+              {selectedFeature === "lan" ? (
+                <div className="text-center">
+                  <p className="text-slate-400 text-sm mb-2">
+                    Share this code with others on the same network:
+                  </p>
+                  <div className="bg-white text-black font-mono text-2xl font-bold p-4 rounded-lg mb-3">
+                    {lanCode}
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(lanCode);
+                      toast.success("LAN code copied!");
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white text-sm"
+                  >
+                    Copy Code
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <p className="text-slate-400 text-sm mb-2">
+                    Share this link with others to join via internet:
+                  </p>
+                  <div className="bg-white text-black font-mono text-sm p-3 rounded-lg mb-3 break-all">
+                    {internetLink}
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(internetLink);
+                      toast.success("Internet link copied!");
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white text-sm"
+                  >
+                    Copy Link
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-        )}
-      </div>
-      {/* Connection settings and connected devices can be added here, styled with Tailwind only */}
+
+          {/* Audio Upload & Player Section */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Upload Audio
+            </label>
+            <input
+              type="file"
+              accept="audio/*"
+              onChange={handleAudioUpload}
+              className="block w-full text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+            {audioFile && (
+              <div className="mt-2 text-slate-300 text-xs">
+                <span className="font-semibold">File:</span> {audioFile.name}{" "}
+                <span className="ml-2">
+                  ({Math.round(audioFile.size / 1024)} KB)
+                </span>
+              </div>
+            )}
+            {audioUrl && (
+              <div className="mt-4 bg-slate-900/60 rounded-lg p-4">
+                <audio
+                  ref={audioRef}
+                  src={audioUrl}
+                  className="w-full mb-2"
+                  onPlay={handlePlay}
+                  onPause={handlePause}
+                  onSeeked={(e) =>
+                    handleSeek({
+                      target: { value: audioRef.current.currentTime },
+                    })
+                  }
+                  onTimeUpdate={() =>
+                    dispatch(setCurrentTime(audioRef.current.currentTime))
+                  }
+                  onLoadedMetadata={() =>
+                    dispatch(setDuration(audioRef.current.duration || 0))
+                  }
+                />
+                <div className="flex items-center gap-4 mb-2">
+                  <button
+                    onClick={handlePlay}
+                    disabled={isPlaying}
+                    className="bg-blue-500 hover:bg-blue-600 rounded-full p-2 text-white"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-6 w-6"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={handlePause}
+                    disabled={!isPlaying}
+                    className="bg-slate-600 hover:bg-slate-700 rounded-full p-2 text-white"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-6 w-6"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M10 9v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
+                    </svg>
+                  </button>
+                  <input
+                    type="range"
+                    min={0}
+                    max={duration}
+                    step={0.01}
+                    value={currentTime}
+                    onChange={handleSeek}
+                    className="w-full accent-blue-500"
+                  />
+                  <span className="text-xs text-slate-400">
+                    {Math.floor(currentTime / 60)}:
+                    {String(Math.floor(currentTime % 60)).padStart(2, "0")}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    / {Math.floor(duration / 60)}:
+                    {String(Math.floor(duration % 60)).padStart(2, "0")}
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={playerVolume}
+                    onChange={(e) => setPlayerVolume(Number(e.target.value))}
+                    className="w-24 accent-blue-500"
+                    title="Volume"
+                  />
+                </div>
+                <button
+                  className="mt-2 bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-semibold shadow"
+                  onClick={handleSyncMusic}
+                >
+                  Sync Music
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Device List with Sync Status */}
+          <div className="mt-6">
+            <h4 className="text-white font-medium mb-2">Connected Devices</h4>
+            {connectedClients.length === 0 ? (
+              <p className="text-gray-400 text-sm">No devices connected</p>
+            ) : (
+              <div className="space-y-2">
+                {connectedClients.map((client, idx) => (
+                  <div
+                    key={client.userId || idx}
+                    className="flex items-center space-x-3 bg-slate-800/60 rounded p-2"
+                  >
+                    {/* Sync status indicator */}
+                    <div
+                      className="w-3 h-3 rounded-full mr-2"
+                      style={{
+                        background:
+                          client.syncStatus === "in-sync"
+                            ? "#22c55e"
+                            : client.syncStatus === "drift"
+                            ? "#facc15"
+                            : "#ef4444",
+                      }}
+                      title={client.syncStatus || "unknown"}
+                    ></div>
+                    <div className="flex-1">
+                      <span className="text-white text-sm font-medium">
+                        {client.name || client.userId}
+                      </span>
+                      <span className="ml-2 text-xs text-slate-400">
+                        {client.syncStatus || "unknown"}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleMuteClient(client.userId)}
+                      className={`px-2 py-1 rounded text-xs ${
+                        client.isMuted
+                          ? "bg-green-500 text-white"
+                          : "bg-red-500 text-white"
+                      }`}
+                    >
+                      {client.isMuted ? "Unmute" : "Mute"}
+                    </button>
+                    <button
+                      onClick={() => handleDisconnectClient(client.userId)}
+                      className="px-2 py-1 rounded text-xs bg-red-700 text-white"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Voice Chat Component */}
+      {selectedFeature && (
+        <VoiceChat sessionCode={sessionCode} mode={selectedFeature} />
+      )}
     </div>
   );
 }

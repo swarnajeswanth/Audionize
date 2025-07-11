@@ -1,3 +1,4 @@
+"use client";
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
 
@@ -31,7 +32,7 @@ export default function HomePage({ showPage }) {
         ))}
       </div>
       <h1 className="text-4xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-        SyncSound
+        Audionize
       </h1>
       <p className="text-xl md:text-2xl text-slate-300 mb-12">
         Synchronized audio playback across multiple devices
@@ -39,7 +40,7 @@ export default function HomePage({ showPage }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-lg mx-auto">
         <button
           onClick={() => showPage("host")}
-          className="bg-slate-800/70 hover:bg-slate-800/90 transition-all transform hover:scale-105 p-6 rounded-xl flex flex-col items-center justify-center border border-white/10"
+          className="bg-slate-800/40 backdrop-blur-md hover:bg-slate-800/60 transition-all transform hover:scale-105 p-6 rounded-xl flex flex-col items-center justify-center border border-white/20"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -62,7 +63,7 @@ export default function HomePage({ showPage }) {
         </button>
         <button
           onClick={() => showPage("join")}
-          className="bg-slate-800/70 hover:bg-slate-800/90 transition-all transform hover:scale-105 p-6 rounded-xl flex flex-col items-center justify-center border border-white/10"
+          className="bg-slate-800/40 backdrop-blur-md hover:bg-slate-800/60 transition-all transform hover:scale-105 p-6 rounded-xl flex flex-col items-center justify-center border border-white/20"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -84,11 +85,11 @@ export default function HomePage({ showPage }) {
           </p>
         </button>
       </div>
-      <div className="mt-16 bg-slate-800/70 border border-white/10 p-6 rounded-xl max-w-2xl mx-auto">
+      <div className="mt-16 bg-slate-800/40 backdrop-blur-md border border-white/20 p-6 rounded-xl max-w-2xl mx-auto">
         <h2 className="text-2xl font-semibold mb-4">How It Works</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex flex-col items-center p-4">
-            <div className="bg-slate-700/50 rounded-full h-12 w-12 flex items-center justify-center mb-3">
+            <div className="bg-slate-700/30 backdrop-blur-sm rounded-full h-12 w-12 flex items-center justify-center mb-3">
               <span className="text-lg font-bold">1</span>
             </div>
             <p className="text-center">
@@ -96,7 +97,7 @@ export default function HomePage({ showPage }) {
             </p>
           </div>
           <div className="flex flex-col items-center p-4">
-            <div className="bg-slate-700/50 rounded-full h-12 w-12 flex items-center justify-center mb-3">
+            <div className="bg-slate-700/30 backdrop-blur-sm rounded-full h-12 w-12 flex items-center justify-center mb-3">
               <span className="text-lg font-bold">2</span>
             </div>
             <p className="text-center">
@@ -104,7 +105,7 @@ export default function HomePage({ showPage }) {
             </p>
           </div>
           <div className="flex flex-col items-center p-4">
-            <div className="bg-slate-700/50 rounded-full h-12 w-12 flex items-center justify-center mb-3">
+            <div className="bg-slate-700/30 backdrop-blur-sm rounded-full h-12 w-12 flex items-center justify-center mb-3">
               <span className="text-lg font-bold">3</span>
             </div>
             <p className="text-center">
