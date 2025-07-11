@@ -6,7 +6,7 @@ const server = http.createServer();
 const io = new IOServer(server, {
   path: "/socket.io",
   cors: {
-    origin: "*",
+    origin: "https://audionize.netlify.app",
     methods: ["GET", "POST"],
   },
 });
