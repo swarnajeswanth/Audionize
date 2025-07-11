@@ -3,12 +3,8 @@ import { useRef, useState, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useAuth, useAppDispatch } from "../store/hooks";
-import {
-  setUser,
-  setSession,
-  logout,
-  setSessionCode,
-} from "../store/slices/authSlice";
+import { setUser, setSession, logout } from "../store/slices/authSlice";
+import { setSessionCode } from "../store/slices/sessionSlice";
 import HomePage from "../components/HomePage";
 import HostPage from "../components/HostPage";
 import SettingsPage from "../components/SettingsPage";
