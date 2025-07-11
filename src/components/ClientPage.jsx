@@ -63,16 +63,20 @@ export default function ClientPage() {
     }
   );
 
+  // On mount: restore name if present for session code
   useEffect(() => {
-    if (urlCode && !sessionCode) {
-      dispatch(setSessionCode(urlCode));
-      dispatch(setIsClient(true));
-
-      // Always show name input modal for client page
-      // This ensures consistent UX regardless of how user arrived at the page
-      setShowNameInput(true);
+    if (urlCode) {
+      const storedUserName = localStorage.getItem(`audionize_user_${urlCode}`);
+      if (storedUserName) {
+        setUserName(storedUserName);
+        setShowNameInput(false);
+        dispatch(setSessionCode(urlCode));
+        dispatch(setIsClient(true));
+      } else {
+        setShowNameInput(true);
+      }
     }
-  }, [urlCode, sessionCode, dispatch]);
+  }, [urlCode, dispatch]);
 
   // Check for existing session on page load (for page refresh recovery)
   useEffect(() => {
@@ -315,20 +319,19 @@ export default function ClientPage() {
     // This is allowed - client controls their own volume
   };
 
-  // Handle name submission
+  // On name submit: store name and hide modal
   const handleNameSubmit = (name) => {
-    // Validate that name is not empty
     if (!name || !name.trim()) {
       toast.error("Please enter a valid name");
       return;
     }
-
     setUserName(name.trim());
-    localStorage.setItem(`audionize_user_${sessionCode}`, name.trim());
+    localStorage.setItem(
+      `audionize_user_${sessionCode || urlCode}`,
+      name.trim()
+    );
     setShowNameInput(false);
     setIsConnecting(true);
-
-    // Simulate connection delay
     setTimeout(() => {
       setIsConnecting(false);
       dispatch(setConnected(true));
@@ -336,22 +339,19 @@ export default function ClientPage() {
     }, 1000);
   };
 
-  // Handle manual disconnect
+  // On session leave: clear stored name
   const handleDisconnect = () => {
     if (window.confirm("Are you sure you want to leave this session?")) {
-      // Clear all state
       dispatch(clearSync());
       dispatch(clearSession());
       dispatch(setAudioUrl(null));
       dispatch(setAudioFile(null));
-
-      // Clear localStorage
-      if (sessionCode) {
-        localStorage.removeItem(`audionize_client_session_${sessionCode}`);
-        localStorage.removeItem(`audionize_user_${sessionCode}`);
+      if (sessionCode || urlCode) {
+        localStorage.removeItem(
+          `audionize_client_session_${sessionCode || urlCode}`
+        );
+        localStorage.removeItem(`audionize_user_${sessionCode || urlCode}`);
       }
-
-      // Redirect to home page
       window.location.href = "/";
     }
   };
@@ -392,15 +392,15 @@ export default function ClientPage() {
     );
   }
 
-  // Show name input if no username or if name input modal is active
+  // Only show modal if no userName or showNameInput is true
   if (!userName || showNameInput) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <NameInputModal
           isOpen={true}
-          onClose={() => {}} // Can't close, must enter name
+          onClose={() => {}}
           onSubmit={handleNameSubmit}
-          initialValue={userName} // Pre-fill with existing username if available
+          initialValue={userName}
         />
       </div>
     );
