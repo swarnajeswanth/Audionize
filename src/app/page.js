@@ -10,7 +10,7 @@ import HostPage from "../components/HostPage";
 import SettingsPage from "../components/SettingsPage";
 import AuthCheck from "../components/AuthCheck";
 import LoadingState from "../components/LoadingState";
-import NameInputModal from "../components/NameInputModal";
+import JoinSessionModal from "../components/JoinSessionModal";
 
 const PAGES = ["home", "host", "settings"];
 
@@ -26,10 +26,8 @@ export default function Audionize() {
   const [page, setPage] = useState("home");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const particlesRef = useRef();
-  const [showNameModal, setShowNameModal] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
   const [pendingJoinCode, setPendingJoinCode] = useState(null);
-  const [joinError, setJoinError] = useState("");
-  const [isInSession, setIsInSession] = useState(false);
 
   // Sync NextAuth session with Redux (but don't redirect)
   useEffect(() => {
@@ -47,23 +45,18 @@ export default function Audionize() {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
       if (code) {
-        dispatch(setSessionCode(code));
-        if (!isAuthenticated) {
-          setPendingJoinCode(code);
-          setShowNameModal(true);
+        // Check if we're already on the client page
+        if (window.location.pathname === "/client") {
+          return; // Already on client page, let it handle the code
         }
-        // If authenticated, auto-join (handled by HomePage/Redux)
+
+        dispatch(setSessionCode(code));
+        setPendingJoinCode(code);
+        setShowJoinModal(true);
         setPage("home");
       }
     }
-  }, [dispatch, isAuthenticated]);
-
-  const handleJoinWithName = (name) => {
-    setShowNameModal(false);
-    setJoinError("");
-    setIsInSession(true); // Mark as joined
-    // Example: dispatch(joinSessionWithName(pendingJoinCode, name));
-  };
+  }, [dispatch]);
 
   // Show loading while checking authentication
   if (status === "loading") {
@@ -88,10 +81,10 @@ export default function Audionize() {
   return (
     <div className="relative overflow-x-hidden min-h-screen font-[Inter,sans-serif] text-slate-200">
       {/* Join Modal */}
-      <NameInputModal
-        isOpen={showNameModal}
-        onClose={() => setShowNameModal(false)}
-        onSubmit={handleJoinWithName}
+      <JoinSessionModal
+        isOpen={showJoinModal}
+        onClose={() => setShowJoinModal(false)}
+        sessionCode={pendingJoinCode}
       />
       {/* Main app container */}
       <div className="min-h-screen flex flex-col">
@@ -230,31 +223,16 @@ export default function Audionize() {
         </nav>
         {/* Main content area */}
         <main className="flex-grow container mx-auto px-4 pt-24 pb-12">
-          {isInSession ? (
-            <div className="text-center mt-16">
-              <h2 className="text-3xl font-bold mb-4">
-                You have joined the session!
-              </h2>
-              <p className="text-lg text-slate-300 mb-6">
-                Waiting for the host to start music or for other participants to
-                join...
-              </p>
-              {/* Optionally, show session code or other info here */}
-            </div>
-          ) : (
-            <>
-              {page === "home" && <HomePage showPage={showPage} />}
-              {page === "host" && (
-                <AuthCheck>
-                  <HostPage />
-                </AuthCheck>
-              )}
-              {page === "settings" && (
-                <AuthCheck>
-                  <SettingsPage />
-                </AuthCheck>
-              )}
-            </>
+          {page === "home" && <HomePage showPage={showPage} />}
+          {page === "host" && (
+            <AuthCheck>
+              <HostPage />
+            </AuthCheck>
+          )}
+          {page === "settings" && (
+            <AuthCheck>
+              <SettingsPage />
+            </AuthCheck>
           )}
         </main>
         {/* Footer */}

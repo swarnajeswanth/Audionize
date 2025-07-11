@@ -11,7 +11,6 @@ const initialState = {
   playbackRate: 1,
   isLoading: false,
   error: null,
-  waveform: [],
 };
 
 const audioSlice = createSlice({
@@ -24,8 +23,9 @@ const audioSlice = createSlice({
     },
     setAudioUrl: (state, action) => {
       state.audioUrl = action.payload;
+      state.error = null;
     },
-    setPlaying: (state, action) => {
+    setIsPlaying: (state, action) => {
       state.isPlaying = action.payload;
     },
     setCurrentTime: (state, action) => {
@@ -37,7 +37,7 @@ const audioSlice = createSlice({
     setVolume: (state, action) => {
       state.volume = action.payload;
     },
-    setMuted: (state, action) => {
+    setIsMuted: (state, action) => {
       state.isMuted = action.payload;
     },
     setPlaybackRate: (state, action) => {
@@ -50,26 +50,19 @@ const audioSlice = createSlice({
       state.error = action.payload;
       state.isLoading = false;
     },
-    setWaveform: (state, action) => {
-      state.waveform = action.payload;
-    },
     clearAudio: (state) => {
       state.audioFile = null;
       state.audioUrl = null;
       state.isPlaying = false;
       state.currentTime = 0;
       state.duration = 0;
+      state.volume = 1;
+      state.isMuted = false;
+      state.playbackRate = 1;
       state.error = null;
-      state.waveform = [];
     },
-    seekTo: (state, action) => {
-      state.currentTime = action.payload;
-    },
-    play: (state) => {
-      state.isPlaying = true;
-    },
-    pause: (state) => {
-      state.isPlaying = false;
+    updateAudioState: (state, action) => {
+      return { ...state, ...action.payload };
     },
   },
 });
@@ -77,19 +70,16 @@ const audioSlice = createSlice({
 export const {
   setAudioFile,
   setAudioUrl,
-  setPlaying,
+  setIsPlaying,
   setCurrentTime,
   setDuration,
   setVolume,
-  setMuted,
+  setIsMuted,
   setPlaybackRate,
   setLoading,
   setError,
-  setWaveform,
   clearAudio,
-  seekTo,
-  play,
-  pause,
+  updateAudioState,
 } = audioSlice.actions;
 
 export default audioSlice.reducer;

@@ -12,6 +12,11 @@ const initialState = {
   error: null,
   isHost: false,
   isClient: false,
+  // Settings properties
+  syncTolerance: 50, // milliseconds
+  autoReconnect: true,
+  normalizeVolume: false,
+  bufferSize: "Medium (Balanced)",
 };
 
 const syncSlice = createSlice({
@@ -112,6 +117,19 @@ const syncSlice = createSlice({
         client.isMuted = isMuted;
       }
     },
+    // Settings reducers
+    setSyncTolerance: (state, action) => {
+      state.syncTolerance = action.payload;
+    },
+    setAutoReconnect: (state, action) => {
+      state.autoReconnect = action.payload;
+    },
+    setNormalizeVolume: (state, action) => {
+      state.normalizeVolume = action.payload;
+    },
+    setBufferSize: (state, action) => {
+      state.bufferSize = action.payload;
+    },
   },
 });
 
@@ -133,6 +151,11 @@ export const {
   clearSync,
   updateClientSyncStatus,
   setMuted,
+  // Settings actions
+  setSyncTolerance,
+  setAutoReconnect,
+  setNormalizeVolume,
+  setBufferSize,
 } = syncSlice.actions;
 
 export default syncSlice.reducer;

@@ -1,9 +1,12 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
+import JoinSessionModal from "./JoinSessionModal";
 
 export default function HomePage({ showPage }) {
   const waveRef = useRef();
+  const [showJoinModal, setShowJoinModal] = useState(false);
+
   useEffect(() => {
     if (!waveRef.current) return;
     const spans = waveRef.current.querySelectorAll("span");
@@ -18,6 +21,7 @@ export default function HomePage({ showPage }) {
     });
     return () => gsap.killTweensOf(spans);
   }, []);
+
   return (
     <div className="max-w-4xl mx-auto text-center">
       <div
@@ -61,7 +65,32 @@ export default function HomePage({ showPage }) {
             Start playback and sync with other devices
           </p>
         </button>
+
+        <button
+          onClick={() => setShowJoinModal(true)}
+          className="bg-slate-800/40 backdrop-blur-md hover:bg-slate-800/60 transition-all transform hover:scale-105 p-6 rounded-xl flex flex-col items-center justify-center border border-white/20"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-12 w-12 text-purple-400 mb-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"
+            />
+          </svg>
+          <h3 className="text-xl font-semibold mb-2">Join a Session</h3>
+          <p className="text-slate-400">
+            Connect to an existing session with a code
+          </p>
+        </button>
       </div>
+
       <div className="mt-16 bg-slate-800/40 backdrop-blur-md border border-white/20 p-6 rounded-xl max-w-2xl mx-auto">
         <h2 className="text-2xl font-semibold mb-4">How It Works</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -91,6 +120,12 @@ export default function HomePage({ showPage }) {
           </div>
         </div>
       </div>
+
+      {/* Join Session Modal */}
+      <JoinSessionModal
+        isOpen={showJoinModal}
+        onClose={() => setShowJoinModal(false)}
+      />
     </div>
   );
 }

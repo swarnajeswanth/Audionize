@@ -23,6 +23,9 @@ const initialState = {
   },
   lastLogin: null,
   loginCount: 0,
+  // Appearance settings
+  theme: "ocean", // 'ocean', 'purple', 'emerald'
+  darkMode: true,
 };
 
 const userSlice = createSlice({
@@ -56,6 +59,8 @@ const userSlice = createSlice({
             preferences: state.preferences,
             lastLogin: state.lastLogin,
             loginCount: state.loginCount,
+            theme: state.theme,
+            darkMode: state.darkMode,
           })
         );
       }
@@ -96,6 +101,31 @@ const userSlice = createSlice({
         localStorage.setItem("audionize_user", JSON.stringify(stored));
       }
     },
+    // Appearance settings
+    setTheme: (state, action) => {
+      state.theme = action.payload;
+
+      // Save to localStorage
+      if (typeof window !== "undefined") {
+        const stored = JSON.parse(
+          localStorage.getItem("audionize_user") || "{}"
+        );
+        stored.theme = state.theme;
+        localStorage.setItem("audionize_user", JSON.stringify(stored));
+      }
+    },
+    setDarkMode: (state, action) => {
+      state.darkMode = action.payload;
+
+      // Save to localStorage
+      if (typeof window !== "undefined") {
+        const stored = JSON.parse(
+          localStorage.getItem("audionize_user") || "{}"
+        );
+        stored.darkMode = state.darkMode;
+        localStorage.setItem("audionize_user", JSON.stringify(stored));
+      }
+    },
   },
 });
 
@@ -104,6 +134,8 @@ export const {
   clearCredentials,
   updatePreferences,
   setLastLogin,
+  setTheme,
+  setDarkMode,
 } = userSlice.actions;
 
 export default userSlice.reducer;
