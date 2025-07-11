@@ -22,8 +22,8 @@ import {
   removeConnectedClient,
   addSyncMessage,
   clearSync,
-  clearSession,
 } from "../store/slices/syncSlice";
+import { clearSession } from "../store/slices/sessionSlice";
 import { useSyncService } from "../hooks/useSyncService";
 import ModernAudioPlayer from "./ModernAudioPlayer";
 import toast from "react-hot-toast";
@@ -134,22 +134,25 @@ export default function HostPage() {
     });
 
     setClientUpdateHandler((data) => {
-      console.log("Client update:", data);
-      if (data.type === "joined") {
-        dispatch(
-          addConnectedClient({
-            id: data.clientId,
-            name: data.clientName,
-            joinedAt: new Date().toISOString(),
-          })
-        );
-        toast.success(`${data.clientName} joined the session`);
-      } else if (data.type === "left") {
-        dispatch(removeConnectedClient(data.clientId));
-        toast.success("A client left the session");
+      if (data.type === "joined" && data.client && data.client.id) {
+        if (!connectedClients.some((c) => c.id === data.client.id)) {
+          dispatch(
+            addConnectedClient({
+              id: data.client.id,
+              name: data.client.name,
+              joinedAt: new Date().toISOString(),
+            })
+          );
+          toast.success(`${data.client.name} joined the session`);
+        }
+      } else if (data.type === "left" && data.clientId) {
+        if (connectedClients.some((c) => c.id === data.clientId)) {
+          dispatch(removeConnectedClient(data.clientId));
+          toast.success("A client left the session");
+        }
       }
     });
-  }, [setMessageHandler, setClientUpdateHandler, dispatch]);
+  }, [setMessageHandler, setClientUpdateHandler, dispatch, connectedClients]);
 
   // Periodically broadcast host time for drift correction
   useEffect(() => {
@@ -494,8 +497,15 @@ export default function HostPage() {
           <input
             type="file"
             accept="audio/*"
-            onChange={handleAudioUpload}
+            onChange={(e) => {
+              if (!syncConnected) {
+                toast.error("Not connected to sync server yet. Please wait.");
+                return;
+              }
+              handleAudioUpload(e);
+            }}
             className="bg-slate-700/50 border border-slate-600 rounded px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            disabled={!syncConnected}
           />
         </div>
 

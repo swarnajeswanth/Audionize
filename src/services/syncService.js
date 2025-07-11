@@ -10,6 +10,7 @@ class SyncService {
     this.onClientUpdateCallback = null;
     this.onAudioUpdateCallback = null;
     this.isConnected = false;
+    this.serverUrl = null; // Add serverUrl as class property
 
     // Enhanced sync properties
     this.networkLatency = 0;
@@ -133,28 +134,31 @@ class SyncService {
     this.userName = userName;
 
     // Determine server URL based on environment
-    let serverUrl = process.env.NEXT_PUBLIC_IO_URL;
+    this.serverUrl = process.env.NEXT_PUBLIC_IO_URL;
 
-    if (!serverUrl) {
+    if (!this.serverUrl) {
       // Check if we're in development
       if (process.env.NODE_ENV === "development") {
-        serverUrl = "http://localhost:4000"; // Local development server
+        this.serverUrl = "http://localhost:4000"; // Local development server
         console.log("🔧 Development mode detected, using local server");
       } else {
-        serverUrl = "https://aduionize-socket.onrender.com"; // Production server
+        this.serverUrl = "https://aduionize-socket.onrender.com"; // Production server
         console.log("🚀 Production mode detected, using remote server");
       }
     }
 
     // Ensure serverUrl has the correct format
-    if (!serverUrl.startsWith("http://") && !serverUrl.startsWith("https://")) {
-      serverUrl = `https://${serverUrl}`;
+    if (
+      !this.serverUrl.startsWith("http://") &&
+      !this.serverUrl.startsWith("https://")
+    ) {
+      this.serverUrl = `https://${this.serverUrl}`;
     }
 
     // Remove trailing slash if present
-    serverUrl = serverUrl.replace(/\/$/, "");
+    this.serverUrl = this.serverUrl.replace(/\/$/, "");
 
-    console.log(`Attempting to connect to sync server: ${serverUrl}`);
+    console.log(`Attempting to connect to sync server: ${this.serverUrl}`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
     console.log(`NEXT_PUBLIC_IO_URL: ${process.env.NEXT_PUBLIC_IO_URL}`);
 
@@ -179,7 +183,7 @@ class SyncService {
 
     // Always try to connect with Socket.IO, even if health check failed
     console.log("Creating Socket.IO connection with options:", {
-      serverUrl,
+      serverUrl: this.serverUrl,
       path: "/socket.io",
       transports: ["websocket", "polling"],
       timeout: 20000,
@@ -190,7 +194,7 @@ class SyncService {
     });
 
     try {
-      this.socket = io(serverUrl, {
+      this.socket = io(this.serverUrl, {
         path: "/socket.io",
         transports: ["websocket", "polling"],
         timeout: 20000, // 20 second timeout
@@ -198,6 +202,10 @@ class SyncService {
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
+        withCredentials: true,
+        extraHeaders: {
+          "Access-Control-Allow-Origin": "*",
+        },
       });
     } catch (connectionError) {
       console.error(
@@ -205,7 +213,7 @@ class SyncService {
         connectionError
       );
       console.error("Connection creation details:", {
-        serverUrl,
+        serverUrl: this.serverUrl,
         error: connectionError?.message || "Unknown error",
         stack: connectionError?.stack,
       });
@@ -236,12 +244,28 @@ class SyncService {
     this.socket.on("connect_error", (error) => {
       console.error("❌ Connection error:", error);
       console.error("Connection details:", {
-        serverUrl: serverUrl || "unknown",
+        serverUrl: this.serverUrl || "unknown",
         error: error?.message || "Unknown error",
         type: error?.type || "unknown",
         description: error?.description || "No description",
         errorObject: error,
+        currentOrigin:
+          typeof window !== "undefined" ? window.location.origin : "unknown",
+        userAgent:
+          typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
       });
+
+      // Provide specific error messages for common issues
+      if (error?.message?.includes("CORS")) {
+        console.error("🔧 CORS Error: Check server CORS configuration");
+      } else if (error?.message?.includes("websocket")) {
+        console.error(
+          "🔧 WebSocket Error: Check if server supports WebSocket transport"
+        );
+      } else if (error?.message?.includes("timeout")) {
+        console.error("🔧 Timeout Error: Server may be down or network issues");
+      }
+
       this.isConnected = false;
     });
 
@@ -511,6 +535,19 @@ class SyncService {
 
   setOnClientUpdate(callback) {
     this.onClientUpdateCallback = callback;
+    if (this.socket) {
+      // Remove previous listeners to prevent stacking
+      this.socket.off("user-joined");
+      this.socket.off("user-left");
+      if (callback) {
+        this.socket.on("user-joined", (data) => {
+          callback({ type: "joined", client: data });
+        });
+        this.socket.on("user-left", (data) => {
+          callback({ type: "left", clientId: data.id });
+        });
+      }
+    }
   }
 
   setOnAudioUpdate(callback) {
@@ -556,6 +593,11 @@ class SyncService {
       return false;
     }
     return this.isConnected && this.socket !== null;
+  }
+
+  // Get current server URL for debugging
+  getServerUrl() {
+    return this.serverUrl;
   }
 }
 
