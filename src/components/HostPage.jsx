@@ -67,7 +67,12 @@ export default function HostPage() {
   };
 
   const lanCode = sessionCode || generateLANCode();
-  const internetLink = `https://your-domain.com/join?session=${sessionCode}&ip=${publicIp}`;
+  // Generate join link for Internet mode
+  const joinUrl = `${
+    typeof window !== "undefined"
+      ? window.location.origin
+      : "https://audionize.netlify.app"
+  }/join?code=${sessionCode}`;
 
   // Handle feature selection
   const handleFeatureSelect = (feature) => {
@@ -530,11 +535,11 @@ export default function HostPage() {
                     Share this link with others to join via internet:
                   </p>
                   <div className="bg-white text-black font-mono text-sm p-3 rounded-lg mb-3 break-all">
-                    {internetLink}
+                    {joinUrl}
                   </div>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(internetLink);
+                      navigator.clipboard.writeText(joinUrl);
                       toast.success("Internet link copied!");
                     }}
                     className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white text-sm"
