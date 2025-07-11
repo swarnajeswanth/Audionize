@@ -82,8 +82,11 @@ export default function HostPage() {
   const audioUploadState = useLoadingState();
 
   // Sync hook: always use public backend
-  const internetSync = useInternetSync(sessionCode, "host", (data) =>
-    setLog((l) => [...l, `[Internet] ${JSON.stringify(data)}`])
+  const internetSync = useInternetSync(
+    sessionCode,
+    "host",
+    user?.name || "Host",
+    (data) => setLog((l) => [...l, `[Internet] ${JSON.stringify(data)}`])
   );
   const sendSync = internetSync.sendSync;
 
