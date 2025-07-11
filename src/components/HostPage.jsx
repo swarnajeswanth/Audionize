@@ -464,19 +464,37 @@ export default function HostPage() {
                         mode: "no-cors",
                       });
 
+                      // Check real socket connection status
+                      const socketConnected =
+                        getConnectionStatus && getConnectionStatus();
+
                       if (response.type === "opaque" || response.ok) {
-                        toast.success(
-                          `Server is accessible at ${serverUrl}. Connection should work.`
-                        );
+                        if (socketConnected) {
+                          toast.success(
+                            `Server is accessible and Socket.IO is CONNECTED.`
+                          );
+                          dispatch(setConnected(true));
+                          dispatch(setSyncStatus("connected"));
+                        } else {
+                          toast.error(
+                            `Server is accessible, but Socket.IO is NOT connected.`
+                          );
+                          dispatch(setConnected(false));
+                          dispatch(setSyncStatus("disconnected"));
+                        }
                       } else {
                         toast.error(
                           "Server health check failed. Please check if the server is running."
                         );
+                        dispatch(setConnected(false));
+                        dispatch(setSyncStatus("disconnected"));
                       }
                     } catch (error) {
                       toast.error(
                         "Connection test failed - server may be down"
                       );
+                      dispatch(setConnected(false));
+                      dispatch(setSyncStatus("disconnected"));
                       console.error("Connection test error:", error);
                     }
                   }}
