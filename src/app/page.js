@@ -3,15 +3,19 @@ import { useRef, useState, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useAuth, useAppDispatch } from "../store/hooks";
-import { setUser, setSession, logout } from "../store/slices/authSlice";
+import {
+  setUser,
+  setSession,
+  logout,
+  setSessionCode,
+} from "../store/slices/authSlice";
 import HomePage from "../components/HomePage";
 import HostPage from "../components/HostPage";
-import JoinPage from "../components/JoinPage";
 import SettingsPage from "../components/SettingsPage";
 import AuthCheck from "../components/AuthCheck";
 import LoadingState from "../components/LoadingState";
 
-const PAGES = ["home", "host", "join", "settings"];
+const PAGES = ["home", "host", "settings"];
 
 function classNames(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -35,6 +39,21 @@ export default function Audionize() {
       dispatch(logout());
     }
   }, [session, status, dispatch]);
+
+  // Auto-join if ?code=SESSIONCODE is present
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      if (code) {
+        // Dispatch to your store or set state as needed
+        dispatch(setSessionCode(code));
+        // Optionally, show a join modal or trigger join logic here
+        // setShowNameModal(true); // Uncomment if you have a modal
+        setPage("home"); // Or whatever page should handle the join
+      }
+    }
+  }, [dispatch]);
 
   // Show loading while checking authentication
   if (status === "loading") {
@@ -201,7 +220,6 @@ export default function Audionize() {
               <HostPage />
             </AuthCheck>
           )}
-          {page === "join" && <JoinPage />}
           {page === "settings" && (
             <AuthCheck>
               <SettingsPage />

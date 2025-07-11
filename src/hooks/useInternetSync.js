@@ -6,7 +6,10 @@ export function useInternetSync(session, role, onSync) {
 
   useEffect(() => {
     if (!session || !role) return;
-    const socket = io("http://localhost:4000", { path: "/socket.io" }); // Change to public IP for real use
+    const socket = io(
+      process.env.NEXT_PUBLIC_IO_URL || "https://aduionize-socket.onrender.com",
+      { path: "/socket.io" }
+    );
     socketRef.current = socket;
     socket.emit("join", { session, role });
     socket.on("sync", onSync);
