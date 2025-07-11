@@ -78,7 +78,6 @@ export default function JoinPage() {
     try {
       // Set up connection based on mode
       if (mode === "lan") {
-        await lanSync.connect();
         dispatch(setConnected(true));
         dispatch(setIsHost(false));
         toast.success("Connected to LAN session!");
