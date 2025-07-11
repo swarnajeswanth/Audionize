@@ -5,6 +5,9 @@
 [template.environment]
   NEXTAUTH_URL = "https://$DEPLOY_PRIME_URL"
 
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
