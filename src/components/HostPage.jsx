@@ -10,6 +10,7 @@ import {
 import {
   generateSessionCode,
   setSessionCode,
+  clearSession,
 } from "../store/slices/sessionSlice";
 import {
   setAudioFile,
@@ -25,7 +26,6 @@ import {
   removeConnectedClient,
   addSyncMessage,
   clearSync,
-  clearSession,
 } from "../store/slices/syncSlice";
 import { useSyncService } from "../hooks/useSyncService";
 import ModernAudioPlayer from "./ModernAudioPlayer";
@@ -233,8 +233,8 @@ export default function HostPage() {
       return;
     }
 
-    // Use the enhanced sync service timing
-    const scheduledTime = Date.now() + 1000; // 1 second delay
+    // Use a 2 second delay for better sync
+    const scheduledTime = Date.now() + 2000; // 2 seconds delay
     sendPlay(scheduledTime, currentTime);
 
     // Update local state immediately for responsive UI
