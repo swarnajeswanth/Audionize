@@ -173,32 +173,28 @@ export default function ClientPage() {
   const handlePlaySync = (data, now, audio) => {
     const { scheduledTime, currentTime, networkLatency } = data;
 
-    if (scheduledTime) {
-      const timeUntilPlay = scheduledTime - now;
+    // Compensate for estimated one-way latency (default to 0 if not provided)
+    const estimatedLatency = networkLatency || 0;
+    const timeUntilPlay = scheduledTime - now - estimatedLatency;
 
-      if (timeUntilPlay > 0) {
-        // Schedule play for future time
-        console.log(`Scheduling play in ${timeUntilPlay}ms`);
-        setTimeout(() => {
-          audio.currentTime = currentTime;
-          audio.play().catch((error) => {
-            console.error("Error playing audio:", error);
-          });
-          dispatch(setIsPlaying(true));
-          dispatch(setCurrentTime(currentTime));
-        }, timeUntilPlay);
-      } else {
-        // Play immediately if scheduled time has passed
-        console.log("Scheduled time passed, playing immediately");
+    if (timeUntilPlay > 0) {
+      // Schedule play for future time
+      console.log(
+        `Scheduling play in ${timeUntilPlay}ms (latency compensated)`
+      );
+      setTimeout(() => {
         audio.currentTime = currentTime;
         audio.play().catch((error) => {
           console.error("Error playing audio:", error);
         });
         dispatch(setIsPlaying(true));
         dispatch(setCurrentTime(currentTime));
-      }
+      }, timeUntilPlay);
     } else {
-      // Fallback to immediate play
+      // Play immediately if scheduled time has passed
+      console.log(
+        "Scheduled time passed, playing immediately (latency compensated)"
+      );
       audio.currentTime = currentTime;
       audio.play().catch((error) => {
         console.error("Error playing audio:", error);
