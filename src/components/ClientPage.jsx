@@ -41,7 +41,6 @@ export default function ClientPage() {
   const [hostDisconnected, setHostDisconnected] = useState(false);
 
   const audioElementRef = useRef(null);
-  const pendingSyncCommands = useRef([]);
 
   // Get session code from URL
   const urlCode = searchParams.get("code");
@@ -63,20 +62,16 @@ export default function ClientPage() {
     }
   );
 
-  // On mount: restore name if present for session code
   useEffect(() => {
-    if (urlCode) {
-      const storedUserName = localStorage.getItem(`audionize_user_${urlCode}`);
-      if (storedUserName) {
-        setUserName(storedUserName);
-        setShowNameInput(false);
-        dispatch(setSessionCode(urlCode));
-        dispatch(setIsClient(true));
-      } else {
-        setShowNameInput(true);
-      }
+    if (urlCode && !sessionCode) {
+      dispatch(setSessionCode(urlCode));
+      dispatch(setIsClient(true));
+
+      // Always show name input modal for client page
+      // This ensures consistent UX regardless of how user arrived at the page
+      setShowNameInput(true);
     }
-  }, [urlCode, dispatch]);
+  }, [urlCode, sessionCode, dispatch]);
 
   // Check for existing session on page load (for page refresh recovery)
   useEffect(() => {
@@ -115,6 +110,10 @@ export default function ClientPage() {
   // Initialize connection
   useEffect(() => {
     if (sessionCode && userName) {
+      dispatch(setConnected(true));
+      dispatch(setSyncStatus("connected"));
+
+      // Store client session info in localStorage for persistence
       localStorage.setItem(
         `audionize_client_session_${sessionCode}`,
         JSON.stringify({
@@ -124,7 +123,7 @@ export default function ClientPage() {
         })
       );
     }
-  }, [sessionCode, userName]);
+  }, [sessionCode, userName, dispatch]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -142,8 +141,7 @@ export default function ClientPage() {
     console.log("Received sync command:", data);
 
     if (!audioElementRef.current?.audio) {
-      console.warn("Audio element not ready for sync, queueing command");
-      pendingSyncCommands.current.push(data);
+      console.warn("Audio element not ready for sync");
       return;
     }
 
@@ -287,11 +285,6 @@ export default function ClientPage() {
   // Handle loaded metadata
   const handleLoadedMetadata = () => {
     // Audio metadata loaded
-    // Process any queued sync commands
-    while (pendingSyncCommands.current.length > 0) {
-      const cmd = pendingSyncCommands.current.shift();
-      handleSync(cmd);
-    }
   };
 
   // Client Audio Player Event Handlers (client only controls volume/mute)
@@ -319,19 +312,20 @@ export default function ClientPage() {
     // This is allowed - client controls their own volume
   };
 
-  // On name submit: store name and hide modal
+  // Handle name submission
   const handleNameSubmit = (name) => {
+    // Validate that name is not empty
     if (!name || !name.trim()) {
       toast.error("Please enter a valid name");
       return;
     }
+
     setUserName(name.trim());
-    localStorage.setItem(
-      `audionize_user_${sessionCode || urlCode}`,
-      name.trim()
-    );
+    localStorage.setItem(`audionize_user_${sessionCode}`, name.trim());
     setShowNameInput(false);
     setIsConnecting(true);
+
+    // Simulate connection delay
     setTimeout(() => {
       setIsConnecting(false);
       dispatch(setConnected(true));
@@ -339,19 +333,22 @@ export default function ClientPage() {
     }, 1000);
   };
 
-  // On session leave: clear stored name
+  // Handle manual disconnect
   const handleDisconnect = () => {
     if (window.confirm("Are you sure you want to leave this session?")) {
+      // Clear all state
       dispatch(clearSync());
       dispatch(clearSession());
       dispatch(setAudioUrl(null));
       dispatch(setAudioFile(null));
-      if (sessionCode || urlCode) {
-        localStorage.removeItem(
-          `audionize_client_session_${sessionCode || urlCode}`
-        );
-        localStorage.removeItem(`audionize_user_${sessionCode || urlCode}`);
+
+      // Clear localStorage
+      if (sessionCode) {
+        localStorage.removeItem(`audionize_client_session_${sessionCode}`);
+        localStorage.removeItem(`audionize_user_${sessionCode}`);
       }
+
+      // Redirect to home page
       window.location.href = "/";
     }
   };
@@ -392,15 +389,15 @@ export default function ClientPage() {
     );
   }
 
-  // Only show modal if no userName or showNameInput is true
+  // Show name input if no username or if name input modal is active
   if (!userName || showNameInput) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <NameInputModal
           isOpen={true}
-          onClose={() => {}}
+          onClose={() => {}} // Can't close, must enter name
           onSubmit={handleNameSubmit}
-          initialValue={userName}
+          initialValue={userName} // Pre-fill with existing username if available
         />
       </div>
     );
@@ -484,7 +481,6 @@ export default function ClientPage() {
               onVolumeChange={handleVolumeChange}
               isHost={false}
               disabled={false}
-              onLoadedMetadata={handleLoadedMetadata}
             />
           </div>
         ) : hostDisconnected ? (

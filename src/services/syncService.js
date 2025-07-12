@@ -3,21 +3,21 @@ import { io } from "socket.io-client";
 class SyncService {
   constructor() {
     this.socket = null;
+    this.isConnected = false;
     this.sessionCode = null;
     this.role = null;
     this.userName = null;
     this.onMessageCallback = null;
     this.onClientUpdateCallback = null;
     this.onAudioUpdateCallback = null;
-    this.isConnected = false;
-    this.serverUrl = null; // Add serverUrl as class property
-
-    // Enhanced sync properties
+    this.pingInterval = null;
     this.networkLatency = 0;
     this.clockOffset = 0;
-    this.syncTolerance = 100; // milliseconds
-    this.lastPingTime = 0;
-    this.pingInterval = null;
+
+    // Connection state management
+    this.connectionPromise = null;
+    this.pendingOperations = [];
+    this.isConnecting = false;
   }
 
   // Health check method to test server accessibility
@@ -124,6 +124,18 @@ class SyncService {
       return;
     }
 
+    // If already connecting, wait for that connection
+    if (this.isConnecting && this.connectionPromise) {
+      console.log("Already connecting, waiting for existing connection...");
+      return this.connectionPromise;
+    }
+
+    // If already connected to the same session, return
+    if (this.isConnected && this.sessionCode === sessionCode) {
+      console.log("Already connected to this session");
+      return Promise.resolve();
+    }
+
     // Disconnect existing connection if any
     if (this.socket) {
       this.disconnect();
@@ -132,103 +144,109 @@ class SyncService {
     this.sessionCode = sessionCode;
     this.role = role;
     this.userName = userName;
+    this.isConnecting = true;
 
-    // Determine server URL based on environment
-    this.serverUrl = process.env.NEXT_PUBLIC_IO_URL;
+    // Create connection promise
+    this.connectionPromise = new Promise(async (resolve, reject) => {
+      try {
+        // Only use production server URL
+        let serverUrl =
+          process.env.NEXT_PUBLIC_IO_URL ||
+          "https://aduionize-socket.onrender.com";
 
-    if (!this.serverUrl) {
-      // Check if we're in development
-      if (process.env.NODE_ENV === "development") {
-        this.serverUrl = "http://localhost:4000"; // Local development server
-        console.log("🔧 Development mode detected, using local server");
-      } else {
-        this.serverUrl = "https://aduionize-socket.onrender.com"; // Production server
-        console.log("🚀 Production mode detected, using remote server");
-      }
-    }
+        // Ensure serverUrl has the correct format
+        if (
+          !serverUrl.startsWith("http://") &&
+          !serverUrl.startsWith("https://")
+        ) {
+          serverUrl = `https://${serverUrl}`;
+        }
 
-    // Ensure serverUrl has the correct format
-    if (
-      !this.serverUrl.startsWith("http://") &&
-      !this.serverUrl.startsWith("https://")
-    ) {
-      this.serverUrl = `https://${this.serverUrl}`;
-    }
+        // Remove trailing slash if present
+        serverUrl = serverUrl.replace(/\/$/, "");
 
-    // Remove trailing slash if present
-    this.serverUrl = this.serverUrl.replace(/\/$/, "");
+        console.log(`Attempting to connect to sync server: ${serverUrl}`);
+        console.log(`Environment: ${process.env.NODE_ENV}`);
+        console.log(`NEXT_PUBLIC_IO_URL: ${process.env.NEXT_PUBLIC_IO_URL}`);
 
-    console.log(`Attempting to connect to sync server: ${this.serverUrl}`);
-    console.log(`Environment: ${process.env.NODE_ENV}`);
-    console.log(`NEXT_PUBLIC_IO_URL: ${process.env.NEXT_PUBLIC_IO_URL}`);
+        // Try health check first, but don't fail if it doesn't work
+        try {
+          const healthCheck = await this.checkServerHealth();
+          if (healthCheck.isHealthy) {
+            console.log(
+              `✅ Health check passed, using server: ${healthCheck.serverUrl}`
+            );
+          } else {
+            console.log(
+              `⚠️ Health check failed, but attempting Socket.IO connection anyway`
+            );
+          }
+        } catch (healthError) {
+          console.log(
+            `⚠️ Health check error, but attempting Socket.IO connection anyway:`,
+            healthError.message
+          );
+        }
 
-    // Try health check first, but don't fail if it doesn't work
-    try {
-      const healthCheck = await this.checkServerHealth();
-      if (healthCheck.isHealthy) {
-        console.log(
-          `✅ Health check passed, using server: ${healthCheck.serverUrl}`
+        // Always try to connect with Socket.IO, even if health check failed
+        console.log("Creating Socket.IO connection with options:", {
+          serverUrl,
+          path: "/socket.io",
+          transports: ["websocket", "polling"],
+          timeout: 20000,
+          forceNew: true,
+          reconnection: true,
+          reconnectionAttempts: 5,
+          reconnectionDelay: 1000,
+        });
+
+        this.socket = io(serverUrl, {
+          path: "/socket.io",
+          transports: ["websocket", "polling"],
+          timeout: 20000, // 20 second timeout
+          forceNew: true,
+          reconnection: true,
+          reconnectionAttempts: 5,
+          reconnectionDelay: 1000,
+        });
+
+        // Connection event handlers
+        if (!this.socket) {
+          throw new Error("Socket not created");
+        }
+
+        // Set up connection event handlers
+        this.setupConnectionHandlers(
+          sessionCode,
+          role,
+          userName,
+          resolve,
+          reject
         );
-      } else {
-        console.log(
-          `⚠️ Health check failed, but attempting Socket.IO connection anyway`
-        );
+      } catch (error) {
+        console.error("❌ Connection setup failed:", error);
+        this.isConnecting = false;
+        this.connectionPromise = null;
+        reject(error);
       }
-    } catch (healthError) {
-      console.log(
-        `⚠️ Health check error, but attempting Socket.IO connection anyway:`,
-        healthError.message
-      );
-    }
-
-    // Always try to connect with Socket.IO, even if health check failed
-    console.log("Creating Socket.IO connection with options:", {
-      serverUrl: this.serverUrl,
-      path: "/socket.io",
-      transports: ["websocket", "polling"],
-      timeout: 20000,
-      forceNew: true,
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
     });
 
-    try {
-      this.socket = io(this.serverUrl, {
-        path: "/socket.io",
-        transports: ["websocket", "polling"],
-        timeout: 20000, // 20 second timeout
-        forceNew: true,
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-        withCredentials: true,
-        extraHeaders: {
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
-    } catch (connectionError) {
-      console.error(
-        "❌ Failed to create Socket.IO connection:",
-        connectionError
-      );
-      console.error("Connection creation details:", {
-        serverUrl: this.serverUrl,
-        error: connectionError?.message || "Unknown error",
-        stack: connectionError?.stack,
-      });
-      return;
-    }
+    return this.connectionPromise;
+  }
 
-    // Connection event handlers
-    if (!this.socket) {
-      console.error("❌ Socket not created, cannot set up event handlers");
-      return;
-    }
+  setupConnectionHandlers(sessionCode, role, userName, resolve, reject) {
+    const connectionTimeout = setTimeout(() => {
+      console.error("❌ Connection timeout");
+      this.isConnecting = false;
+      this.connectionPromise = null;
+      reject(new Error("Connection timeout"));
+    }, 30000); // 30 second timeout
 
     this.socket.on("connect", () => {
       console.log("✅ Connected to sync server successfully");
+      clearTimeout(connectionTimeout);
       this.isConnected = true;
+      this.isConnecting = false;
 
       // Start ping-pong for latency measurement
       this.startLatencyMeasurement();
@@ -239,34 +257,20 @@ class SyncService {
         role: role,
         name: userName,
       });
+
+      // Process any pending operations
+      this.processPendingOperations();
+
+      resolve();
     });
 
     this.socket.on("connect_error", (error) => {
       console.error("❌ Connection error:", error);
-      console.error("Connection details:", {
-        serverUrl: this.serverUrl || "unknown",
-        error: error?.message || "Unknown error",
-        type: error?.type || "unknown",
-        description: error?.description || "No description",
-        errorObject: error,
-        currentOrigin:
-          typeof window !== "undefined" ? window.location.origin : "unknown",
-        userAgent:
-          typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
-      });
-
-      // Provide specific error messages for common issues
-      if (error?.message?.includes("CORS")) {
-        console.error("🔧 CORS Error: Check server CORS configuration");
-      } else if (error?.message?.includes("websocket")) {
-        console.error(
-          "🔧 WebSocket Error: Check if server supports WebSocket transport"
-        );
-      } else if (error?.message?.includes("timeout")) {
-        console.error("🔧 Timeout Error: Server may be down or network issues");
-      }
-
+      clearTimeout(connectionTimeout);
+      this.isConnecting = false;
+      this.connectionPromise = null;
       this.isConnected = false;
+      reject(error);
     });
 
     this.socket.on("disconnect", (reason) => {
@@ -313,7 +317,7 @@ class SyncService {
       if (this.onClientUpdateCallback) {
         this.onClientUpdateCallback({
           type: "left",
-          clientId: data.id, // always use data.id
+          clientId: data.id,
         });
       }
     });
@@ -361,31 +365,24 @@ class SyncService {
       }
     });
 
-    this.socket.on("playback-action", (data) => {
-      console.log("Received playback action:", data);
+    this.socket.on("sync_all_command", (data) => {
+      console.log("Received sync all command:", data);
       if (this.onMessageCallback) {
-        this.onMessageCallback(data);
-      }
-    });
-    this.socket.on("presence-update", (data) => {
-      if (this.onMessageCallback) {
-        this.onMessageCallback({ type: "presence-update", ...data });
+        this.onMessageCallback({ type: "sync_all", ...data });
       }
     });
 
-    this.socket.on("error", (error) => {
-      console.error("Sync service error:", error);
+    this.socket.on("time_update", (data) => {
+      console.log("Received time update:", data);
+      if (this.onMessageCallback) {
+        this.onMessageCallback({ type: "time_update", ...data });
+      }
     });
 
-    // Handle host disconnection
-    this.socket.on("host_disconnect", (data) => {
-      console.log("Host disconnected - room closed:", data);
+    this.socket.on("sync", (data) => {
+      console.log("Received sync:", data);
       if (this.onMessageCallback) {
-        this.onMessageCallback({
-          type: "host_disconnect",
-          message: "Host has disconnected. Room closed.",
-          ...data,
-        });
+        this.onMessageCallback({ type: "sync", ...data });
       }
     });
 
@@ -399,6 +396,42 @@ class SyncService {
         `Network latency: ${this.networkLatency}ms, Clock offset: ${this.clockOffset}ms`
       );
     });
+  }
+
+  // Queue operation for when connection is ready
+  queueOperation(operation) {
+    if (this.isConnected && this.socket) {
+      // Execute immediately if connected
+      try {
+        operation();
+      } catch (error) {
+        console.error("Error executing operation:", error);
+      }
+    } else {
+      // Queue for later execution
+      console.log("Queueing operation, waiting for connection...", {
+        isConnected: this.isConnected,
+        hasSocket: !!this.socket,
+        pendingCount: this.pendingOperations.length + 1,
+      });
+      this.pendingOperations.push(operation);
+    }
+  }
+
+  // Process pending operations after connection
+  processPendingOperations() {
+    console.log(
+      `Processing ${this.pendingOperations.length} pending operations`
+    );
+    while (this.pendingOperations.length > 0) {
+      const operation = this.pendingOperations.shift();
+      try {
+        operation();
+        console.log("Successfully executed queued operation");
+      } catch (error) {
+        console.error("Error executing queued operation:", error);
+      }
+    }
   }
 
   // Start periodic latency measurement
@@ -429,103 +462,117 @@ class SyncService {
 
   // Send audio file to clients
   sendAudio(audioBuffer, fileName, fileSize, fileType) {
-    if (this.socket && this.isConnected) {
-      console.log("Sending audio to clients:", { fileName, fileSize });
-      this.socket.emit("audio_upload", {
-        sessionCode: this.sessionCode,
-        audioBuffer, // ArrayBuffer
-        fileName,
-        fileSize,
-        fileType, // pass the type
-        timestamp: Date.now(),
-      });
-    } else {
-      console.error("Cannot send audio: socket not connected");
-    }
+    this.queueOperation(() => {
+      if (this.socket && this.isConnected) {
+        console.log("Sending audio to clients:", { fileName, fileSize });
+        this.socket.emit("audio_upload", {
+          sessionCode: this.sessionCode,
+          audioBuffer, // ArrayBuffer
+          fileName,
+          fileSize,
+          fileType, // pass the type
+          timestamp: Date.now(),
+        });
+      } else {
+        console.error("Cannot send audio: socket not connected");
+      }
+    });
   }
 
   // Enhanced play command with better timing
   sendPlay(scheduledTime = 0, currentTime = 0) {
-    if (this.socket && this.isConnected) {
-      const playDelay = this.calculatePlayDelay();
-      const actualScheduledTime =
-        scheduledTime || this.getSyncTimestamp() + playDelay;
+    this.queueOperation(() => {
+      if (this.socket && this.isConnected) {
+        const playDelay = this.calculatePlayDelay();
+        const actualScheduledTime =
+          scheduledTime || this.getSyncTimestamp() + playDelay;
 
-      console.log("Sending play command:", {
-        scheduledTime: actualScheduledTime,
-        currentTime,
-        playDelay,
-        networkLatency: this.networkLatency,
-      });
+        console.log("Sending play command:", {
+          scheduledTime: actualScheduledTime,
+          currentTime,
+          playDelay,
+          networkLatency: this.networkLatency,
+        });
 
-      this.socket.emit("play_command", {
-        sessionCode: this.sessionCode,
-        scheduledTime: actualScheduledTime,
-        currentTime: currentTime,
-        timestamp: this.getSyncTimestamp(),
-        networkLatency: this.networkLatency,
-      });
-    } else {
-      console.error("Cannot send play command: socket not connected");
-    }
+        this.socket.emit("play_command", {
+          sessionCode: this.sessionCode,
+          scheduledTime: actualScheduledTime,
+          currentTime: currentTime,
+          timestamp: this.getSyncTimestamp(),
+          networkLatency: this.networkLatency,
+        });
+      } else {
+        console.error("Cannot send play command: socket not connected");
+      }
+    });
   }
 
   // Send pause command to clients (with currentTime for sync)
   sendPause(currentTime = 0) {
-    if (this.socket && this.isConnected) {
-      console.log("Sending pause command:", { currentTime });
-      this.socket.emit("pause_command", {
-        sessionCode: this.sessionCode,
-        currentTime: currentTime,
-        timestamp: Date.now(),
-      });
-    } else {
-      console.error("Cannot send pause command: socket not connected");
-    }
+    this.queueOperation(() => {
+      if (this.socket && this.isConnected) {
+        console.log("Sending pause command:", { currentTime });
+        this.socket.emit("pause_command", {
+          sessionCode: this.sessionCode,
+          currentTime: currentTime,
+          timestamp: Date.now(),
+        });
+      } else {
+        console.error("Cannot send pause command: socket not connected");
+      }
+    });
   }
 
   // Send seek command to clients
   sendSeek(currentTime) {
-    if (this.socket && this.isConnected) {
-      this.socket.emit("seek_command", {
-        sessionCode: this.sessionCode,
-        currentTime: currentTime,
-        timestamp: Date.now(),
-      });
-    }
+    this.queueOperation(() => {
+      if (this.socket && this.isConnected) {
+        this.socket.emit("seek_command", {
+          sessionCode: this.sessionCode,
+          currentTime: currentTime,
+          timestamp: Date.now(),
+        });
+      }
+    });
   }
 
   // Send volume command to clients
   sendVolume(volume) {
-    if (this.socket && this.isConnected) {
-      this.socket.emit("volume_command", {
-        sessionCode: this.sessionCode,
-        volume: volume,
-        timestamp: Date.now(),
-      });
-    }
+    this.queueOperation(() => {
+      if (this.socket && this.isConnected) {
+        this.socket.emit("volume_command", {
+          sessionCode: this.sessionCode,
+          volume: volume,
+          timestamp: Date.now(),
+        });
+      }
+    });
   }
 
   // Send sync all command to clients
   sendSyncAll(currentTime) {
-    if (this.socket && this.isConnected) {
-      this.socket.emit("sync_all_command", {
-        sessionCode: this.sessionCode,
-        currentTime: currentTime,
-        timestamp: Date.now(),
-      });
-    }
+    this.queueOperation(() => {
+      if (this.socket && this.isConnected) {
+        this.socket.emit("sync_all_command", {
+          sessionCode: this.sessionCode,
+          currentTime: currentTime,
+          timestamp: Date.now(),
+        });
+      }
+    });
   }
 
   // Send client time update to host
   sendTimeUpdate(currentTime) {
-    if (this.socket && this.isConnected) {
-      this.socket.emit("time_update", {
-        sessionCode: this.sessionCode,
-        currentTime: currentTime,
-        timestamp: Date.now(),
-      });
-    }
+    this.queueOperation(() => {
+      if (this.socket && this.isConnected) {
+        this.socket.emit("time_update", {
+          sessionCode: this.sessionCode,
+          currentTime: currentTime,
+          timestamp: Date.now(),
+        });
+      }
+    });
   }
 
   // Set callbacks
@@ -535,18 +582,6 @@ class SyncService {
 
   setOnClientUpdate(callback) {
     this.onClientUpdateCallback = callback;
-    if (!this.socket) return; // Prevent null errors
-    // Remove previous listeners to prevent stacking
-    this.socket.off("user-joined");
-    this.socket.off("user-left");
-    if (callback) {
-      this.socket.on("user-joined", (data) => {
-        callback({ type: "joined", client: data });
-      });
-      this.socket.on("user-left", (data) => {
-        callback({ type: "left", clientId: data.id });
-      });
-    }
   }
 
   setOnAudioUpdate(callback) {
@@ -560,6 +595,11 @@ class SyncService {
       console.log("Skipping disconnect in server environment");
       return;
     }
+
+    // Clear pending operations
+    this.pendingOperations = [];
+    this.isConnecting = false;
+    this.connectionPromise = null;
 
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
@@ -594,9 +634,24 @@ class SyncService {
     return this.isConnected && this.socket !== null;
   }
 
-  // Get current server URL for debugging
-  getServerUrl() {
-    return this.serverUrl;
+  // Check if service is ready to accept operations
+  isReady() {
+    return this.getConnectionStatus() && this.sessionCode && this.role;
+  }
+
+  // Get detailed connection info for debugging
+  getConnectionInfo() {
+    return {
+      isConnected: this.isConnected,
+      hasSocket: !!this.socket,
+      sessionCode: this.sessionCode,
+      role: this.role,
+      userName: this.userName,
+      isConnecting: this.isConnecting,
+      pendingOperations: this.pendingOperations.length,
+      networkLatency: this.networkLatency,
+      clockOffset: this.clockOffset,
+    };
   }
 }
 

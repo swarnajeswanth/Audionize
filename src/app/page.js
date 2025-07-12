@@ -110,6 +110,30 @@ export default function Audionize() {
               <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
                 Audionize
               </span>
+              {/* Sync Service Status */}
+              <div className="ml-4">
+                <div
+                  className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                    typeof window !== "undefined" &&
+                    window.location.hostname === "localhost"
+                      ? "bg-green-500/30 text-green-300 border border-green-500/50"
+                      : "bg-yellow-500/30 text-yellow-300 border border-yellow-500/50"
+                  }`}
+                >
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                      typeof window !== "undefined" &&
+                      window.location.hostname === "localhost"
+                        ? "bg-green-400 animate-pulse"
+                        : "bg-yellow-400"
+                    }`}
+                  ></div>
+                  {typeof window !== "undefined" &&
+                  window.location.hostname === "localhost"
+                    ? "Local Sync"
+                    : "Remote Sync"}
+                </div>
+              </div>
             </div>
             <div className="hidden md:flex space-x-6">
               {PAGES.map((p) => (

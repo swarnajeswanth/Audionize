@@ -7,7 +7,10 @@ import {
   useAppDispatch,
   useAppSelector,
 } from "../store/hooks";
-import { generateSessionCode } from "../store/slices/sessionSlice";
+import {
+  generateSessionCode,
+  setSessionCode,
+} from "../store/slices/sessionSlice";
 import {
   setAudioFile,
   setAudioUrl,
@@ -22,8 +25,8 @@ import {
   removeConnectedClient,
   addSyncMessage,
   clearSync,
+  clearSession,
 } from "../store/slices/syncSlice";
-import { clearSession } from "../store/slices/sessionSlice";
 import { useSyncService } from "../hooks/useSyncService";
 import ModernAudioPlayer from "./ModernAudioPlayer";
 import toast from "react-hot-toast";
@@ -44,11 +47,13 @@ export default function HostPage() {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
-  // Generate session code if not exists
-  if (!sessionCode) {
-    const newCode = generateSessionCodeValue();
-    dispatch(generateSessionCode(newCode));
-  }
+  // Generate session code if not exists (move to useEffect)
+  useEffect(() => {
+    if (!sessionCode) {
+      const newCode = generateSessionCodeValue();
+      dispatch(generateSessionCode(newCode));
+    }
+  }, [sessionCode, dispatch]);
 
   // Generate join link for public backend
   const joinUrl = `${
@@ -102,6 +107,7 @@ export default function HostPage() {
     isConnected: syncConnected, // <-- get real socket connection status
     sendTimeUpdate, // <-- Add sendTimeUpdate to the hook
     getConnectionStatus,
+    getConnectionInfo, // <-- Add getConnectionInfo to the hook
   } = useSyncService(sessionCode, "host", user?.name || "Host");
 
   // Debug connection status
@@ -134,25 +140,22 @@ export default function HostPage() {
     });
 
     setClientUpdateHandler((data) => {
-      if (data.type === "joined" && data.client && data.client.id) {
-        if (!connectedClients.some((c) => c.id === data.client.id)) {
-          dispatch(
-            addConnectedClient({
-              id: data.client.id,
-              name: data.client.name,
-              joinedAt: new Date().toISOString(),
-            })
-          );
-          toast.success(`${data.client.name} joined the session`);
-        }
-      } else if (data.type === "left" && data.clientId) {
-        if (connectedClients.some((c) => c.id === data.clientId)) {
-          dispatch(removeConnectedClient(data.clientId));
-          toast.success("A client left the session");
-        }
+      console.log("Client update:", data);
+      if (data.type === "joined") {
+        dispatch(
+          addConnectedClient({
+            id: data.clientId,
+            name: data.clientName,
+            joinedAt: new Date().toISOString(),
+          })
+        );
+        toast.success(`${data.clientName} joined the session`);
+      } else if (data.type === "left") {
+        dispatch(removeConnectedClient(data.clientId));
+        toast.success("A client left the session");
       }
     });
-  }, [setMessageHandler, setClientUpdateHandler, dispatch, connectedClients]);
+  }, [setMessageHandler, setClientUpdateHandler, dispatch]);
 
   // Periodically broadcast host time for drift correction
   useEffect(() => {
@@ -180,13 +183,19 @@ export default function HostPage() {
         const blob = new Blob([file], { type: file.type });
         setAudioBlob(blob);
 
+        // Show loading state for audio upload
+        toast.loading("Uploading audio to sync server...");
+
         // Convert blob to ArrayBuffer and send with file type
         const arrayBuffer = await blob.arrayBuffer();
         sendAudio(arrayBuffer, file.name, file.size, file.type);
 
+        // Dismiss loading toast and show success
+        toast.dismiss();
         toast.success("Audio uploaded and shared with clients");
       } catch (error) {
         console.error("Error uploading audio:", error);
+        toast.dismiss();
         toast.error("Failed to upload audio");
       }
     }
@@ -369,17 +378,17 @@ export default function HostPage() {
           <div className="text-right">
             <div
               className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                syncConnected
+                isConnected
                   ? "bg-green-500/30 text-green-300 border border-green-500/50"
                   : "bg-red-500/30 text-red-300 border border-red-500/50"
               }`}
             >
               <div
                 className={`w-2 h-2 rounded-full mr-2 ${
-                  syncConnected ? "bg-green-400 animate-pulse" : "bg-red-400"
+                  isConnected ? "bg-green-400 animate-pulse" : "bg-red-400"
                 }`}
               ></div>
-              {syncConnected ? "Connected" : "Disconnected"}
+              {isConnected ? "Connected" : "Disconnected"}
             </div>
             <div className="mt-2">
               <div
@@ -464,37 +473,19 @@ export default function HostPage() {
                         mode: "no-cors",
                       });
 
-                      // Check real socket connection status
-                      const socketConnected =
-                        getConnectionStatus && getConnectionStatus();
-
                       if (response.type === "opaque" || response.ok) {
-                        if (socketConnected) {
-                          toast.success(
-                            `Server is accessible and Socket.IO is CONNECTED.`
-                          );
-                          dispatch(setConnected(true));
-                          dispatch(setSyncStatus("connected"));
-                        } else {
-                          toast.error(
-                            `Server is accessible, but Socket.IO is NOT connected.`
-                          );
-                          dispatch(setConnected(false));
-                          dispatch(setSyncStatus("disconnected"));
-                        }
+                        toast.success(
+                          `Server is accessible at ${serverUrl}. Connection should work.`
+                        );
                       } else {
                         toast.error(
                           "Server health check failed. Please check if the server is running."
                         );
-                        dispatch(setConnected(false));
-                        dispatch(setSyncStatus("disconnected"));
                       }
                     } catch (error) {
                       toast.error(
                         "Connection test failed - server may be down"
                       );
-                      dispatch(setConnected(false));
-                      dispatch(setSyncStatus("disconnected"));
                       console.error("Connection test error:", error);
                     }
                   }}
@@ -507,6 +498,55 @@ export default function HostPage() {
           </div>
         </div>
 
+        {/* Debug Panel (only show in development) */}
+        {process.env.NODE_ENV === "development" && (
+          <div className="bg-slate-700/30 p-4 rounded-lg mb-6">
+            <h3 className="font-semibold mb-2">Debug Information</h3>
+            <div className="space-y-2 text-xs font-mono">
+              <div className="flex justify-between">
+                <span>Connection Status:</span>
+                <span
+                  className={syncConnected ? "text-green-400" : "text-red-400"}
+                >
+                  {syncConnected ? "Connected" : "Disconnected"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Session Code:</span>
+                <span>{sessionCode}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Role:</span>
+                <span>host</span>
+              </div>
+              <div className="flex justify-between">
+                <span>User Name:</span>
+                <span>{user?.name || "Host"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Audio URL:</span>
+                <span className="truncate max-w-xs">
+                  {audioUrl ? "Set" : "Not Set"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Connected Clients:</span>
+                <span>{connectedClients.length}</span>
+              </div>
+              <button
+                onClick={() => {
+                  const info = getConnectionInfo();
+                  console.log("Sync Service Debug Info:", info);
+                  toast.success("Debug info logged to console");
+                }}
+                className="mt-2 px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white text-xs rounded transition-colors"
+              >
+                Log Debug Info
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Audio Upload */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -515,15 +555,8 @@ export default function HostPage() {
           <input
             type="file"
             accept="audio/*"
-            onChange={(e) => {
-              if (!syncConnected) {
-                toast.error("Not connected to sync server yet. Please wait.");
-                return;
-              }
-              handleAudioUpload(e);
-            }}
+            onChange={handleAudioUpload}
             className="bg-slate-700/50 border border-slate-600 rounded px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            disabled={!syncConnected}
           />
         </div>
 

@@ -25,16 +25,21 @@ export const useSyncService = (
 ) => {
   const isConnectedRef = React.useRef(false);
   const dispatch = useAppDispatch();
+  const [connectionStatus, setConnectionStatus] =
+    React.useState("disconnected");
 
-  // Default sync configuration
-  const defaultConfig = {
-    syncTolerance: 100, // milliseconds
-    playDelay: 1000, // milliseconds
-    driftCorrectionThreshold: 0.1, // seconds
-    pingInterval: 5000, // milliseconds
-    maxLatency: 500, // milliseconds
-    ...syncConfig,
-  };
+  // Default sync configuration (memoized)
+  const defaultConfig = React.useMemo(
+    () => ({
+      syncTolerance: 100, // milliseconds
+      playDelay: 1000, // milliseconds
+      driftCorrectionThreshold: 0.1, // seconds
+      pingInterval: 5000, // milliseconds
+      maxLatency: 500, // milliseconds
+      ...syncConfig,
+    }),
+    [syncConfig]
+  );
 
   // Connect to sync service
   useEffect(() => {
@@ -48,14 +53,26 @@ export const useSyncService = (
             config: defaultConfig,
           });
 
+          setConnectionStatus("connecting");
+
           // Apply sync configuration
           syncService.syncTolerance = defaultConfig.syncTolerance;
           syncService.pingInterval = defaultConfig.pingInterval;
 
           await syncService.connect(sessionCode, role, userName);
           isConnectedRef.current = true;
+          setConnectionStatus("connected");
+
+          // Update Redux state
+          dispatch(setConnected(true));
+          dispatch(setSyncStatus("connected"));
+
+          console.log("Successfully connected to sync service");
         } catch (error) {
           console.error("Failed to connect to sync service:", error);
+          setConnectionStatus("error");
+          dispatch(setConnected(false));
+          dispatch(setSyncStatus("error"));
           toast.error("Failed to connect to sync service");
         }
       };
@@ -68,9 +85,12 @@ export const useSyncService = (
         console.log("Disconnecting from sync service");
         syncService.disconnect();
         isConnectedRef.current = false;
+        setConnectionStatus("disconnected");
+        dispatch(setConnected(false));
+        dispatch(setSyncStatus("disconnected"));
       }
     };
-  }, [sessionCode, role, userName, defaultConfig]);
+  }, [sessionCode, role, userName, defaultConfig, dispatch]);
 
   // Handle room-full event - always call useEffect
   useEffect(() => {
@@ -144,32 +164,6 @@ export const useSyncService = (
     return () => {};
   }, [sessionCode, role, userName, dispatch, onHostDisconnect]);
 
-  // Listen for socket connect/disconnect and update Redux state
-  useEffect(() => {
-    if (syncService.socket) {
-      const handleConnect = () => {
-        dispatch(setConnected(true));
-        dispatch(setSyncStatus("connected"));
-      };
-      const handleDisconnect = () => {
-        dispatch(setConnected(false));
-        dispatch(setSyncStatus("disconnected"));
-      };
-      syncService.socket.on("connect", handleConnect);
-      syncService.socket.on("disconnect", handleDisconnect);
-      // Initial state
-      if (syncService.getConnectionStatus()) {
-        handleConnect();
-      } else {
-        handleDisconnect();
-      }
-      return () => {
-        syncService.socket.off("connect", handleConnect);
-        syncService.socket.off("disconnect", handleDisconnect);
-      };
-    }
-  }, [dispatch, syncService.socket]);
-
   // Set up message handlers
   const setMessageHandler = useCallback((handler) => {
     syncService.setOnMessage(handler);
@@ -183,38 +177,104 @@ export const useSyncService = (
     syncService.setOnAudioUpdate(handler);
   }, []);
 
-  // Send commands
-  const sendAudio = useCallback((audioBuffer, fileName, fileSize, fileType) => {
-    syncService.sendAudio(audioBuffer, fileName, fileSize, fileType);
-  }, []);
+  // Send commands with connection check
+  const sendAudio = useCallback(
+    (audioBuffer, fileName, fileSize, fileType) => {
+      if (connectionStatus === "connected") {
+        syncService.sendAudio(audioBuffer, fileName, fileSize, fileType);
+      } else {
+        console.log("Queueing audio send - waiting for connection...");
+        syncService.sendAudio(audioBuffer, fileName, fileSize, fileType);
+      }
+    },
+    [connectionStatus]
+  );
 
-  const sendPlay = useCallback((scheduledTime = 0, currentTime = 0) => {
-    syncService.sendPlay(scheduledTime, currentTime);
-  }, []);
+  const sendPlay = useCallback(
+    (scheduledTime = 0, currentTime = 0) => {
+      if (connectionStatus === "connected") {
+        syncService.sendPlay(scheduledTime, currentTime);
+      } else {
+        console.log("Queueing play command - waiting for connection...");
+        syncService.sendPlay(scheduledTime, currentTime);
+      }
+    },
+    [connectionStatus]
+  );
 
-  const sendPause = useCallback((currentTime = 0) => {
-    syncService.sendPause(currentTime);
-  }, []);
+  const sendPause = useCallback(
+    (currentTime = 0) => {
+      if (connectionStatus === "connected") {
+        syncService.sendPause(currentTime);
+      } else {
+        console.log("Queueing pause command - waiting for connection...");
+        syncService.sendPause(currentTime);
+      }
+    },
+    [connectionStatus]
+  );
 
-  const sendSeek = useCallback((currentTime) => {
-    syncService.sendSeek(currentTime);
-  }, []);
+  const sendSeek = useCallback(
+    (currentTime) => {
+      if (connectionStatus === "connected") {
+        syncService.sendSeek(currentTime);
+      } else {
+        console.log("Queueing seek command - waiting for connection...");
+        syncService.sendSeek(currentTime);
+      }
+    },
+    [connectionStatus]
+  );
 
-  const sendVolume = useCallback((volume) => {
-    syncService.sendVolume(volume);
-  }, []);
+  const sendVolume = useCallback(
+    (volume) => {
+      if (connectionStatus === "connected") {
+        syncService.sendVolume(volume);
+      } else {
+        console.log("Queueing volume command - waiting for connection...");
+        syncService.sendVolume(volume);
+      }
+    },
+    [connectionStatus]
+  );
 
-  const sendSyncAll = useCallback((currentTime) => {
-    syncService.sendSyncAll(currentTime);
-  }, []);
+  const sendSyncAll = useCallback(
+    (currentTime) => {
+      if (connectionStatus === "connected") {
+        syncService.sendSyncAll(currentTime);
+      } else {
+        console.log("Queueing sync all command - waiting for connection...");
+        syncService.sendSyncAll(currentTime);
+      }
+    },
+    [connectionStatus]
+  );
 
-  const sendTimeUpdate = useCallback((currentTime) => {
-    syncService.sendTimeUpdate(currentTime);
-  }, []);
+  const sendTimeUpdate = useCallback(
+    (currentTime) => {
+      if (connectionStatus === "connected") {
+        syncService.sendTimeUpdate(currentTime);
+      } else {
+        console.log("Queueing time update - waiting for connection...");
+        syncService.sendTimeUpdate(currentTime);
+      }
+    },
+    [connectionStatus]
+  );
 
   // Get connection status
   const getConnectionStatus = useCallback(() => {
-    return syncService.getConnectionStatus();
+    return syncService.isReady() && connectionStatus === "connected";
+  }, [connectionStatus]);
+
+  // Get detailed connection info
+  const getConnectionInfo = useCallback(() => {
+    return syncService.getConnectionInfo();
+  }, []);
+
+  // Check if service is ready
+  const isReady = useCallback(() => {
+    return syncService.isReady();
   }, []);
 
   // When user toggles mic
@@ -312,6 +372,9 @@ export const useSyncService = (
     sendSyncAll,
     sendTimeUpdate,
     getConnectionStatus,
+    getConnectionInfo,
+    isReady,
     isConnected: getConnectionStatus(),
+    connectionStatus,
   };
 };
