@@ -41,6 +41,10 @@ export default function HostPage() {
   const [audioFile, setAudioFileState] = useState(null);
   const [audioUrl, setAudioUrlState] = useState(null);
   const [audioBlob, setAudioBlob] = useState(null);
+  const [playDelay, setPlayDelay] = useState(2000); // 2 seconds default
+  const [isPlayScheduled, setIsPlayScheduled] = useState(false);
+
+  const audioElementRef = useRef(null);
 
   // Generate 6-digit session code
   const generateSessionCodeValue = () => {
@@ -187,7 +191,7 @@ export default function HostPage() {
     if (isPlaying && syncConnected) {
       const interval = setInterval(() => {
         sendTimeUpdate(currentTime);
-      }, 2000); // every 2 seconds
+      }, 1000); // every 1 second for better sync
       return () => clearInterval(interval);
     }
   }, [isPlaying, syncConnected, currentTime, sendTimeUpdate]);
@@ -233,12 +237,31 @@ export default function HostPage() {
       return;
     }
 
-    // Use a 2 second delay for better sync
-    const scheduledTime = Date.now() + 2000; // 2 seconds delay
+    // Use configurable delay for better sync
+    const scheduledTime = Date.now() + playDelay;
     sendPlay(scheduledTime, currentTime);
 
-    // Update local state immediately for responsive UI
-    dispatch(setIsPlaying(true));
+    // Show scheduled play notification
+    setIsPlayScheduled(true);
+    toast.success(`Play scheduled in ${playDelay / 1000} seconds`);
+
+    // Schedule host playback to start at the same time as clients
+    setTimeout(() => {
+      if (audioElementRef.current?.audio) {
+        audioElementRef.current.audio.play().catch((error) => {
+          console.error("Error playing audio:", error);
+        });
+        // Update playing state when audio actually starts
+        dispatch(setIsPlaying(true));
+      }
+    }, playDelay);
+
+    // Don't update playing state immediately - wait for scheduled play
+
+    // Clear scheduled state after delay
+    setTimeout(() => {
+      setIsPlayScheduled(false);
+    }, playDelay);
   };
 
   const handlePause = () => {
@@ -248,6 +271,14 @@ export default function HostPage() {
     }
 
     sendPause(currentTime);
+
+    // Clear scheduled play state
+    setIsPlayScheduled(false);
+
+    // Pause immediately for host
+    if (audioElementRef.current?.audio) {
+      audioElementRef.current.audio.pause();
+    }
 
     // Update local state immediately for responsive UI
     dispatch(setIsPlaying(false));
@@ -260,6 +291,11 @@ export default function HostPage() {
     }
 
     sendSeek(time);
+
+    // Seek immediately for host
+    if (audioElementRef.current?.audio) {
+      audioElementRef.current.audio.currentTime = time;
+    }
 
     // Update local state immediately for responsive UI
     dispatch(setCurrentTime(time));
@@ -585,10 +621,59 @@ export default function HostPage() {
           />
         </div>
 
+        {/* Play Delay Control */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-slate-300 mb-2">
+            Play Delay: {playDelay / 1000}s
+          </label>
+          <div className="flex items-center space-x-4">
+            <input
+              type="range"
+              min="500"
+              max="5000"
+              step="500"
+              value={playDelay}
+              onChange={(e) => setPlayDelay(parseInt(e.target.value))}
+              className="flex-1 bg-slate-600 rounded-lg appearance-none cursor-pointer slider"
+              style={{
+                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${
+                  ((playDelay - 500) / (5000 - 500)) * 100
+                }%, #475569 ${
+                  ((playDelay - 500) / (5000 - 500)) * 100
+                }%, #475569 100%)`,
+              }}
+            />
+            <input
+              type="number"
+              min="500"
+              max="5000"
+              step="500"
+              value={playDelay}
+              onChange={(e) => setPlayDelay(parseInt(e.target.value))}
+              className="w-20 bg-slate-700/50 border border-slate-600 rounded px-2 py-1 text-center text-white text-sm"
+            />
+            <span className="text-slate-400 text-sm">ms</span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Time to wait before starting playback (allows clients to sync)
+          </p>
+        </div>
+
         {/* Modern Audio Player */}
         {audioUrl ? (
           <div className="mb-6">
+            {isPlayScheduled && (
+              <div className="mb-4 p-3 bg-blue-500/20 border border-blue-500/30 rounded-lg">
+                <div className="flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400 mr-2"></div>
+                  <span className="text-blue-300 text-sm">
+                    Play scheduled in {playDelay / 1000} seconds...
+                  </span>
+                </div>
+              </div>
+            )}
             <ModernAudioPlayer
+              ref={audioElementRef}
               audioUrl={audioUrl}
               onPlay={handlePlay}
               onPause={handlePause}

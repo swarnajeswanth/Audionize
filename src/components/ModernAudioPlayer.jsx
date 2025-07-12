@@ -68,30 +68,7 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
     }
   };
 
-  // Periodic drift correction for clients
-  useEffect(() => {
-    if (!isHost && audioRef.current && isPlaying) {
-      syncIntervalRef.current = setInterval(() => {
-        // Check for drift every 5 seconds
-        const expectedTime = (Date.now() - lastSyncTime) / 1000;
-        const actualTime = audioRef.current.currentTime;
-        const drift = actualTime - expectedTime;
-
-        if (Math.abs(drift) > 0.1) {
-          // Correct if drift > 100ms
-          console.log(`Correcting drift: ${drift.toFixed(3)}s`);
-          audioRef.current.currentTime = expectedTime;
-          setDriftCorrection(0);
-        }
-      }, 5000);
-    }
-
-    return () => {
-      if (syncIntervalRef.current) {
-        clearInterval(syncIntervalRef.current);
-      }
-    };
-  }, [isHost, isPlaying, lastSyncTime]);
+  // Note: Drift correction is now handled in ClientPage component for better accuracy
 
   // Handle loaded metadata
   const handleLoadedMetadata = () => {
@@ -110,10 +87,8 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
       dispatch(setIsPlaying(false));
       if (onPause) onPause();
     } else {
-      audioRef.current.play().catch((error) => {
-        console.error("Error playing audio:", error);
-      });
-      dispatch(setIsPlaying(true));
+      // For host, don't auto-play - let the sync system handle timing
+      // The actual play will be scheduled by the host's handlePlay function
       if (onPlay) onPlay();
     }
   };

@@ -484,14 +484,18 @@ class SyncService {
     this.queueOperation(() => {
       if (this.socket && this.isConnected) {
         const playDelay = this.calculatePlayDelay();
+        // Use provided scheduledTime if it's greater than 0, otherwise calculate
         const actualScheduledTime =
-          scheduledTime || this.getSyncTimestamp() + playDelay;
+          scheduledTime > 0
+            ? scheduledTime
+            : this.getSyncTimestamp() + playDelay;
 
         console.log("Sending play command:", {
           scheduledTime: actualScheduledTime,
           currentTime,
           playDelay,
           networkLatency: this.networkLatency,
+          providedScheduledTime: scheduledTime,
         });
 
         this.socket.emit("play_command", {

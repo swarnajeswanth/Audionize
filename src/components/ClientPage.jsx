@@ -40,6 +40,12 @@ export default function ClientPage() {
   const [showNameInput, setShowNameInput] = useState(false);
   const [hostDisconnected, setHostDisconnected] = useState(false);
 
+  // Drift correction state
+  const [lastHostTime, setLastHostTime] = useState(0);
+  const [lastHostTimestamp, setLastHostTimestamp] = useState(0);
+  const [driftCorrection, setDriftCorrection] = useState(0);
+  const [syncInterval, setSyncInterval] = useState(null);
+
   const audioElementRef = useRef(null);
 
   // Get session code from URL
@@ -133,10 +139,13 @@ export default function ClientPage() {
         localStorage.removeItem(`audionize_client_session_${sessionCode}`);
         localStorage.removeItem(`audionize_user_${sessionCode}`);
       }
+
+      // Stop drift correction
+      stopDriftCorrection();
     };
   }, [sessionCode]);
 
-  // Enhanced sync handler with precise timing
+  // Enhanced sync handler with precise timing and drift correction
   const handleSync = (data) => {
     console.log("Received sync command:", data);
 
@@ -164,14 +173,22 @@ export default function ClientPage() {
       case "sync_all":
         handleSyncAll(data, now, audio);
         break;
+      case "time_update":
+        handleTimeUpdateSync(data, now, audio);
+        break;
       default:
         console.log("Unknown sync command:", data.type);
     }
   };
 
-  // Precise play synchronization
+  // Precise play synchronization with drift correction
   const handlePlaySync = (data, now, audio) => {
     const { scheduledTime, currentTime, networkLatency } = data;
+
+    // Reset drift correction on new play command
+    setDriftCorrection(0);
+    setLastHostTime(currentTime);
+    setLastHostTimestamp(now);
 
     // Compensate for estimated one-way latency (default to 0 if not provided)
     const estimatedLatency = networkLatency || 0;
@@ -189,6 +206,9 @@ export default function ClientPage() {
         });
         dispatch(setIsPlaying(true));
         dispatch(setCurrentTime(currentTime));
+
+        // Start drift correction after play starts
+        startDriftCorrection();
       }, timeUntilPlay);
     } else {
       // Play immediately if scheduled time has passed
@@ -201,12 +221,18 @@ export default function ClientPage() {
       });
       dispatch(setIsPlaying(true));
       dispatch(setCurrentTime(currentTime));
+
+      // Start drift correction after play starts
+      startDriftCorrection();
     }
   };
 
   // Precise pause synchronization
   const handlePauseSync = (data, now, audio) => {
     const { currentTime } = data;
+
+    // Stop drift correction on pause
+    stopDriftCorrection();
 
     audio.pause();
     audio.currentTime = currentTime;
@@ -268,6 +294,64 @@ export default function ClientPage() {
     } catch (error) {
       console.error("Error processing audio sync:", error);
       toast.error("Failed to load audio from host");
+    }
+  };
+
+  // Handle time updates from host for drift correction
+  const handleTimeUpdateSync = (data, now, audio) => {
+    const { currentTime, timestamp } = data;
+
+    if (!audio || audio.paused) return;
+
+    // Calculate expected time based on host's time and elapsed time
+    const timeElapsed = (now - lastHostTimestamp) / 1000;
+    const expectedTime = lastHostTime + timeElapsed;
+    const actualTime = audio.currentTime;
+    const drift = actualTime - expectedTime;
+
+    // Update host time reference
+    setLastHostTime(currentTime);
+    setLastHostTimestamp(now);
+
+    // Apply drift correction if significant
+    if (Math.abs(drift) > 0.05) {
+      // 50ms threshold
+      console.log(`Drift detected: ${drift.toFixed(3)}s, correcting...`);
+      const newCorrection = driftCorrection + drift;
+      setDriftCorrection(newCorrection);
+
+      // Apply correction to audio
+      audio.currentTime = expectedTime;
+      dispatch(setCurrentTime(expectedTime));
+    }
+  };
+
+  // Start drift correction interval
+  const startDriftCorrection = () => {
+    if (syncInterval) {
+      clearInterval(syncInterval);
+    }
+
+    const interval = setInterval(() => {
+      if (
+        audioElementRef.current?.audio &&
+        !audioElementRef.current.audio.paused
+      ) {
+        // Request time update from host
+        if (sendTimeUpdate) {
+          sendTimeUpdate();
+        }
+      }
+    }, 2000); // Check every 2 seconds
+
+    setSyncInterval(interval);
+  };
+
+  // Stop drift correction interval
+  const stopDriftCorrection = () => {
+    if (syncInterval) {
+      clearInterval(syncInterval);
+      setSyncInterval(null);
     }
   };
 
@@ -468,6 +552,18 @@ export default function ClientPage() {
         {/* Modern Audio Player */}
         {audioUrl && !hostDisconnected ? (
           <div className="mb-8">
+            {/* Drift Correction Status */}
+            {Math.abs(driftCorrection) > 0.01 && (
+              <div className="mb-4 p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
+                <div className="flex items-center justify-center">
+                  <div className="animate-pulse rounded-full h-4 w-4 border-2 border-yellow-400 mr-2"></div>
+                  <span className="text-yellow-300 text-sm">
+                    Syncing audio timing... (Drift: {driftCorrection.toFixed(3)}
+                    s)
+                  </span>
+                </div>
+              </div>
+            )}
             <ModernAudioPlayer
               ref={audioElementRef}
               audioUrl={audioUrl}
@@ -578,6 +674,38 @@ export default function ClientPage() {
               <span className="text-slate-300">Player Control:</span>
               <span className="text-blue-400 font-medium">Volume Only</span>
             </div>
+            {process.env.NODE_ENV === "development" && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-slate-300">Drift Correction:</span>
+                  <span
+                    className={`font-medium ${
+                      Math.abs(driftCorrection) > 0.05
+                        ? "text-yellow-400"
+                        : "text-green-400"
+                    }`}
+                  >
+                    {driftCorrection.toFixed(3)}s
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-300">Last Host Time:</span>
+                  <span className="text-white font-mono">
+                    {lastHostTime.toFixed(2)}s
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-300">Sync Interval:</span>
+                  <span
+                    className={`font-medium ${
+                      syncInterval ? "text-green-400" : "text-red-400"
+                    }`}
+                  >
+                    {syncInterval ? "Active" : "Inactive"}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
