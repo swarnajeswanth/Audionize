@@ -173,15 +173,19 @@ export default function HostPage() {
       if (data.type === "joined") {
         dispatch(
           addConnectedClient({
-            id: data.clientId,
-            name: data.clientName,
+            id: data.clientId || data.client?.id,
+            name: data.clientName || data.client?.name,
             joinedAt: new Date().toISOString(),
           })
         );
-        toast.success(`${data.clientName} joined the session`);
+        toast.success(
+          `${data.clientName || data.client?.name} joined the session`
+        );
       } else if (data.type === "left") {
-        dispatch(removeConnectedClient(data.clientId));
-        toast.success("A client left the session");
+        const clientId = data.clientId || data.client?.id;
+        const clientName = data.clientName || data.client?.name;
+        dispatch(removeConnectedClient(clientId));
+        toast.info(`${clientName || "A client"} left the session`);
       }
     });
   }, [setMessageHandler, setClientUpdateHandler, dispatch]);

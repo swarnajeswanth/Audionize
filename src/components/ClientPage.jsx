@@ -113,23 +113,17 @@ export default function ClientPage() {
     }
   }, [urlCode, sessionCode, dispatch]);
 
-  // Initialize connection
+  // Update connection status based on sync service
   useEffect(() => {
-    if (sessionCode && userName) {
-      dispatch(setConnected(true));
+    if (syncConnected && userName) {
+      setIsConnecting(false);
       dispatch(setSyncStatus("connected"));
-
-      // Store client session info in localStorage for persistence
-      localStorage.setItem(
-        `audionize_client_session_${sessionCode}`,
-        JSON.stringify({
-          sessionCode,
-          userName,
-          timestamp: Date.now(),
-        })
-      );
+      toast.success("Connected to session!");
+    } else if (userName && !syncConnected) {
+      // Still connecting
+      setIsConnecting(true);
     }
-  }, [sessionCode, userName, dispatch]);
+  }, [syncConnected, userName, dispatch]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -405,12 +399,23 @@ export default function ClientPage() {
     setShowNameInput(false);
     setIsConnecting(true);
 
-    // Simulate connection delay
-    setTimeout(() => {
-      setIsConnecting(false);
-      dispatch(setConnected(true));
-      dispatch(setSyncStatus("connected"));
-    }, 1000);
+    // Store client session info in localStorage for persistence
+    localStorage.setItem(
+      `audionize_client_session_${sessionCode}`,
+      JSON.stringify({
+        sessionCode,
+        userName: name.trim(),
+        timestamp: Date.now(),
+      })
+    );
+
+    // Set connection status to connecting
+    dispatch(setConnected(true));
+    dispatch(setSyncStatus("connecting"));
+
+    // The sync service will automatically connect when userName is set
+    // due to the useSyncService hook dependency on userName
+    toast.success("Connecting to session...");
   };
 
   // Handle manual disconnect
@@ -484,7 +489,7 @@ export default function ClientPage() {
   }
 
   // Show connecting state
-  if (isConnecting) {
+  if (isConnecting && userName) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingState

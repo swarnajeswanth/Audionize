@@ -3,10 +3,8 @@ import { useState, useEffect } from "react";
 import AnimatedModal from "./AnimatedModal";
 import { useAppDispatch } from "../store/hooks";
 import { setSessionCode, setIsClient } from "../store/slices/sessionSlice";
-import { setConnected, setSyncStatus } from "../store/slices/syncSlice";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { useSyncService } from "../hooks/useSyncService";
 
 export default function JoinSessionModal({
   isOpen,
@@ -14,23 +12,15 @@ export default function JoinSessionModal({
   sessionCode: initialCode = "",
 }) {
   const [sessionCode, setSessionCodeState] = useState(initialCode);
-  const [userName, setUserName] = useState("");
   const [isJoining, setIsJoining] = useState(false);
   const dispatch = useAppDispatch();
   const router = useRouter();
 
-  // Connect to sync service when we have session code and username
-  const syncService = useSyncService(
-    sessionCode || "",
-    userName ? "client" : "",
-    userName || ""
-  );
-
   const handleJoin = async (e) => {
     e.preventDefault();
 
-    if (!sessionCode.trim() || !userName.trim()) {
-      toast.error("Please enter both session code and your name");
+    if (!sessionCode.trim()) {
+      toast.error("Please enter a session code");
       return;
     }
 
@@ -42,45 +32,11 @@ export default function JoinSessionModal({
     setIsJoining(true);
 
     try {
-      // Set session state
+      // Set session state (but don't connect to sync server yet)
       dispatch(setSessionCode(sessionCode.trim()));
       dispatch(setIsClient(true));
-      dispatch(setConnected(true));
-      dispatch(setSyncStatus("connecting"));
-
-      // Store username in localStorage for this session
-      localStorage.setItem(
-        `audionize_user_${sessionCode.trim()}`,
-        userName.trim()
-      );
-
-      // Store client session info in localStorage for persistence
-      localStorage.setItem(
-        `audionize_client_session_${sessionCode.trim()}`,
-        JSON.stringify({
-          sessionCode: sessionCode.trim(),
-          userName: userName.trim(),
-          timestamp: Date.now(),
-        })
-      );
 
       toast.success("Joining session...");
-
-      // Wait for sync service to connect and join room
-      let attempts = 0;
-      const maxAttempts = 10;
-
-      while (attempts < maxAttempts) {
-        if (syncService.isConnected) {
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        attempts++;
-      }
-
-      if (!syncService.isConnected) {
-        throw new Error("Failed to connect to session");
-      }
 
       // Close modal and redirect to client view
       onClose();
@@ -88,8 +44,6 @@ export default function JoinSessionModal({
     } catch (error) {
       console.error("Failed to join session:", error);
       toast.error("Failed to join session. Please try again.");
-      dispatch(setConnected(false));
-      dispatch(setSyncStatus("error"));
     } finally {
       setIsJoining(false);
     }
@@ -145,32 +99,11 @@ export default function JoinSessionModal({
           </p>
         </div>
 
-        <div>
-          <label
-            htmlFor="userName"
-            className="block text-sm font-medium text-gray-300 mb-2"
-          >
-            Your Name
-          </label>
-          <input
-            id="userName"
-            type="text"
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
-            placeholder="Enter your name"
-            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            required
-          />
-          <p className="text-xs text-gray-400 mt-1">
-            This name will be visible to the host and other participants
-          </p>
-        </div>
-
         <div className="flex justify-end space-x-3 pt-4">
           {isJoining && (
             <div className="flex items-center text-blue-400 text-sm">
               <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mr-2"></div>
-              Connecting to session...
+              Joining session...
             </div>
           )}
           <button
@@ -182,20 +115,14 @@ export default function JoinSessionModal({
           </button>
           <button
             type="submit"
-            disabled={
-              isJoining ||
-              !(sessionCode || "").trim() ||
-              !(userName || "").trim()
-            }
+            disabled={isJoining || !(sessionCode || "").trim()}
             className={`px-6 py-2 rounded-lg font-semibold transition-all ${
-              isJoining ||
-              !(sessionCode || "").trim() ||
-              !(userName || "").trim()
+              isJoining || !(sessionCode || "").trim()
                 ? "bg-slate-700 text-slate-400 cursor-not-allowed"
                 : "bg-blue-600 hover:bg-blue-700 text-white"
             }`}
           >
-            {isJoining ? "Connecting to Session..." : "Join Session"}
+            {isJoining ? "Joining Session..." : "Join Session"}
           </button>
         </div>
       </form>

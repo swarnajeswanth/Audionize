@@ -251,12 +251,18 @@ class SyncService {
       // Start ping-pong for latency measurement
       this.startLatencyMeasurement();
 
-      // Join the session
-      this.socket.emit("join", {
-        session: sessionCode,
-        role: role,
-        name: userName,
-      });
+      // Join the session with retry logic
+      const joinSession = () => {
+        console.log(`Joining session: ${sessionCode} as ${role} (${userName})`);
+        this.socket.emit("join", {
+          session: sessionCode,
+          role: role,
+          name: userName,
+        });
+      };
+
+      // Join immediately
+      joinSession();
 
       // Process any pending operations
       this.processPendingOperations();
@@ -289,6 +295,9 @@ class SyncService {
       this.isConnected = true;
 
       // Re-join the session after reconnection
+      console.log(
+        `Re-joining session: ${sessionCode} as ${role} (${userName})`
+      );
       this.socket.emit("join", {
         session: sessionCode,
         role: role,
