@@ -50,8 +50,33 @@ export default function HostPage() {
   // Generate session code if not exists (move to useEffect)
   useEffect(() => {
     if (!sessionCode) {
+      // Try to recover session from localStorage
+      const storedSession = localStorage.getItem("audionize_host_session");
+      if (storedSession) {
+        try {
+          const sessionData = JSON.parse(storedSession);
+          // Check if session is not too old (within last 24 hours)
+          const sessionAge = Date.now() - sessionData.timestamp;
+          if (sessionAge < 24 * 60 * 60 * 1000) {
+            dispatch(setSessionCode(sessionData.sessionCode));
+            toast.success("Host session restored from previous connection");
+            return;
+          } else {
+            // Session too old, clear it
+            localStorage.removeItem("audionize_host_session");
+          }
+        } catch (error) {
+          console.error("Error parsing stored session:", error);
+          localStorage.removeItem("audionize_host_session");
+        }
+      }
+      // If no valid session in storage, generate a new one
       const newCode = generateSessionCodeValue();
       dispatch(generateSessionCode(newCode));
+      localStorage.setItem(
+        "audionize_host_session",
+        JSON.stringify({ sessionCode: newCode, timestamp: Date.now() })
+      );
     }
   }, [sessionCode, dispatch]);
 
