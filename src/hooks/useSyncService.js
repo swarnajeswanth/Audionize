@@ -41,9 +41,24 @@ export const useSyncService = (
     [syncConfig]
   );
 
-  // Connect to sync service
+  // Track previous values to avoid unnecessary disconnect/reconnect
+  const prevSessionCode = React.useRef();
+  const prevRole = React.useRef();
+  const prevUserName = React.useRef();
+
   useEffect(() => {
-    if (sessionCode && role && userName && !isConnectedRef.current) {
+    // Only connect if values actually changed
+    const shouldConnect =
+      sessionCode &&
+      role &&
+      userName &&
+      (sessionCode !== prevSessionCode.current ||
+        role !== prevRole.current ||
+        userName !== prevUserName.current);
+
+    let didConnect = false;
+
+    if (shouldConnect && !isConnectedRef.current) {
       const connectToServer = async () => {
         try {
           console.log("Connecting to sync service:", {
@@ -68,6 +83,7 @@ export const useSyncService = (
           dispatch(setSyncStatus("connected"));
 
           console.log("Successfully connected to sync service");
+          didConnect = true;
         } catch (error) {
           console.error("Failed to connect to sync service:", error);
           setConnectionStatus("error");
@@ -76,12 +92,17 @@ export const useSyncService = (
           toast.error("Failed to connect to sync service");
         }
       };
-
       connectToServer();
     }
 
+    // Update refs after attempting connection
+    prevSessionCode.current = sessionCode;
+    prevRole.current = role;
+    prevUserName.current = userName;
+
+    // Only disconnect on true unmount
     return () => {
-      if (isConnectedRef.current) {
+      if (isConnectedRef.current && !didConnect) {
         console.log("Disconnecting from sync service");
         syncService.disconnect();
         isConnectedRef.current = false;
