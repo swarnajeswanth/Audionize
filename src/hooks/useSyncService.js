@@ -102,7 +102,7 @@ export const useSyncService = (
 
     // Only disconnect on true unmount
     return () => {
-      if (isConnectedRef.current && !didConnect) {
+      if (isConnectedRef.current) {
         console.log("Disconnecting from sync service");
         syncService.disconnect();
         isConnectedRef.current = false;
@@ -111,7 +111,7 @@ export const useSyncService = (
         dispatch(setSyncStatus("disconnected"));
       }
     };
-  }, [sessionCode, role, userName, defaultConfig, dispatch]);
+  }, [sessionCode, role, userName, dispatch]);
 
   // Handle room-full event - always call useEffect
   useEffect(() => {
