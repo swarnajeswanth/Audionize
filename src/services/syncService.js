@@ -261,6 +261,10 @@ class SyncService {
       // Join the session with retry logic
       const joinSession = () => {
         console.log(`Joining session: ${sessionCode} as ${role} (${userName})`);
+        // Reset client ready flag when joining new session
+        if (this.socket) {
+          this.socket.clientReadySent = false;
+        }
         this.socket.emit("join", {
           session: sessionCode,
           role: role,
@@ -300,6 +304,11 @@ class SyncService {
     this.socket.on("reconnect", (attemptNumber) => {
       console.log(`🔄 Reconnected after ${attemptNumber} attempts`);
       this.isConnected = true;
+
+      // Reset client ready flag on reconnection
+      if (this.socket) {
+        this.socket.clientReadySent = false;
+      }
 
       // Re-join the session after reconnection
       console.log(
@@ -399,6 +408,14 @@ class SyncService {
       console.log("Received sync:", data);
       if (this.onMessageCallback) {
         this.onMessageCallback({ type: "sync", ...data });
+      }
+    });
+
+    // Add handler for all-clients-ready event (host only)
+    this.socket.on("all-clients-ready", (data) => {
+      console.log("Received all-clients-ready:", data);
+      if (this.onMessageCallback) {
+        this.onMessageCallback({ type: "all-clients-ready", ...data });
       }
     });
 

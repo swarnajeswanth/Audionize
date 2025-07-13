@@ -168,6 +168,11 @@ export default function HostPage() {
       if (data.type === "sync") {
         dispatch(setSyncStatus("synced"));
         toast.success("Audio synchronized with all clients");
+      } else if (data.type === "all-clients-ready") {
+        console.log("[HOST] All clients ready via message handler:", data);
+        setAllClientsReady(true);
+        setReadyClients(data.readyClients || []);
+        toast.success("All clients are ready to play!");
       }
     });
 
@@ -203,6 +208,17 @@ export default function HostPage() {
 
     const handlePresenceUpdate = (data) => {
       dispatch(presenceUpdate(data));
+      // Remove disconnected clients from readyClients
+      setReadyClients((prev) =>
+        prev.filter((id) => data.clients.some((c) => c.id === id))
+      );
+      // If any client is missing from readyClients, not all are ready
+      if (
+        data.clients.length === 0 ||
+        data.clients.some((c) => !readyClients.includes(c.id))
+      ) {
+        setAllClientsReady(false);
+      }
     };
 
     const handleAllClientsReady = (data) => {
@@ -219,7 +235,7 @@ export default function HostPage() {
       syncService.socket.off("presence-update", handlePresenceUpdate);
       syncService.socket.off("all-clients-ready", handleAllClientsReady);
     };
-  }, [sessionCode, dispatch]);
+  }, [sessionCode, dispatch, readyClients]);
 
   // Add logging to readiness UI
   useEffect(() => {
@@ -267,29 +283,21 @@ export default function HostPage() {
       const blob = new Blob([file], { type: file.type });
       setAudioBlob(blob);
 
+      // Reset readiness state after new audio upload
+      setAllClientsReady(false);
+      setReadyClients([]);
+
       // Show loading state for audio upload
       toast.loading("Uploading audio to sync server...");
 
-      // Send audio to clients with retry logic
+      // Send audio to clients
       if (syncConnected) {
         try {
           // Convert blob to ArrayBuffer and send with file type
           const arrayBuffer = await blob.arrayBuffer();
 
-          // Add timeout for audio upload
-          await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              reject(new Error("Audio upload timeout"));
-            }, 30000); // 30 second timeout
-
-            sendAudio(arrayBuffer, file.name, file.size, file.type);
-
-            // Assume success after a short delay (since sendAudio is async)
-            setTimeout(() => {
-              clearTimeout(timeout);
-              resolve();
-            }, 2000);
-          });
+          // Send audio immediately
+          sendAudio(arrayBuffer, file.name, file.size, file.type);
 
           // Dismiss loading toast and show success
           toast.dismiss();
@@ -604,20 +612,21 @@ export default function HostPage() {
               <span>Connected Clients:</span>
               <span>{connectedClients.length}</span>
             </div>
-            {connectedClients.length > 0 && (
-              <div className="flex justify-between">
-                <span>Client Readiness:</span>
-                <span
-                  className={`font-medium ${
-                    allClientsReady ? "text-green-400" : "text-yellow-400"
-                  }`}
-                >
-                  {allClientsReady
-                    ? "All Ready"
-                    : `${readyClients.length}/${connectedClients.length} Ready`}
-                </span>
-              </div>
-            )}
+            {/* In the session info UI, always show readiness row, even for 0 clients */}
+            <div className="flex justify-between">
+              <span>Client Readiness:</span>
+              <span
+                className={`font-medium ${
+                  allClientsReady ? "text-green-400" : "text-yellow-400"
+                }`}
+              >
+                {connectedClients.length === 0
+                  ? "0/0 Ready"
+                  : allClientsReady
+                  ? "All Ready"
+                  : `${readyClients.length}/${connectedClients.length} Ready`}
+              </span>
+            </div>
             <div className="flex justify-between">
               <span>Sync Server Status:</span>
               <span

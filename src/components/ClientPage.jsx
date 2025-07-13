@@ -383,6 +383,12 @@ export default function ClientPage() {
   const handleAudioSync = (data) => {
     console.log("[CLIENT] Received audio sync event:", data);
     try {
+      // Reset client ready flag for new audio
+      const syncService = require("../services/syncService").default;
+      if (syncService.socket) {
+        syncService.socket.clientReadySent = false;
+      }
+
       // Handle audio buffer data
       if (data.audioBuffer) {
         const audioBlob = new Blob([new Uint8Array(data.audioBuffer)], {
@@ -485,16 +491,30 @@ export default function ClientPage() {
   // Notify server when audio is ready
   const handleLoadedMetadata = () => {
     console.log("[CLIENT] onLoadedMetadata fired");
+    console.log("[CLIENT] Audio element:", !!audioElementRef.current?.audio);
+    console.log("[CLIENT] Session code:", sessionCode);
+    console.log("[CLIENT] User name:", userName);
+
     if (audioElementRef.current?.audio && sessionCode && userName) {
       // Notify server that this client is ready
       const syncService = require("../services/syncService").default;
       if (syncService.socket) {
-        syncService.socket.emit("client-ready", {
-          sessionCode,
-          clientId: syncService.socket.id,
-        });
-        console.log("[CLIENT] Notified server: client ready to play");
+        // Prevent duplicate client-ready events
+        if (!syncService.socket.clientReadySent) {
+          syncService.socket.emit("client-ready", {
+            sessionCode,
+            clientId: syncService.socket.id,
+          });
+          syncService.socket.clientReadySent = true;
+          console.log("[CLIENT] Notified server: client ready to play");
+        } else {
+          console.log("[CLIENT] Client ready already sent, skipping duplicate");
+        }
+      } else {
+        console.log("[CLIENT] No socket connection available");
       }
+    } else {
+      console.log("[CLIENT] Missing required data for client ready");
     }
   };
 
@@ -508,6 +528,10 @@ export default function ClientPage() {
           sessionCode,
           clientId: syncService.socket.id,
         });
+        // Reset the ready flag so we can send ready again when audio is fixed
+        if (syncService.socket.clientReadySent) {
+          syncService.socket.clientReadySent = false;
+        }
         console.log("[CLIENT] Notified server: client not ready");
       }
     }
