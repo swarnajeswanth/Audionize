@@ -39,6 +39,7 @@ export default function ClientPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [showNameInput, setShowNameInput] = useState(false);
   const [hostDisconnected, setHostDisconnected] = useState(false);
+  const [isPageActive, setIsPageActive] = useState(true); // Track if page is active
 
   // Drift correction state
   const [lastHostTime, setLastHostTime] = useState(0);
@@ -47,6 +48,8 @@ export default function ClientPage() {
   const [syncInterval, setSyncInterval] = useState(null);
 
   const audioElementRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  const pageVisibilityRef = useRef(null);
 
   // Get session code from URL
   const urlCode = searchParams.get("code");
@@ -68,18 +71,50 @@ export default function ClientPage() {
     }
   );
 
+  // Track page visibility to detect when user navigates away
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const isVisible = !document.hidden;
+      setIsPageActive(isVisible);
+
+      if (!isVisible && sessionCode && userName) {
+        console.log("Page became hidden - client may have navigated away");
+        // Don't disconnect immediately, give some time for the user to come back
+        // The server will handle cleanup if the client doesn't return
+      }
+    };
+
+    const handleBeforeUnload = (e) => {
+      if (sessionCode && userName && !hostDisconnected) {
+        // Show confirmation dialog
+        e.preventDefault();
+        e.returnValue =
+          "Are you sure you want to leave? You will be disconnected from the session.";
+        return "Are you sure you want to leave? You will be disconnected from the session.";
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    pageVisibilityRef.current = { handleVisibilityChange, handleBeforeUnload };
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [sessionCode, userName, hostDisconnected]);
+
   useEffect(() => {
     if (urlCode && !sessionCode) {
       dispatch(setSessionCode(urlCode));
       dispatch(setIsClient(true));
 
-      // Always show name input modal for client page
-      // This ensures consistent UX regardless of how user arrived at the page
-      setShowNameInput(true);
+      // Don't show name input here - let the session recovery logic handle it
+      // The session recovery useEffect will determine if we need to show name input
     }
   }, [urlCode, sessionCode, dispatch]);
 
-  // Check for existing session on page load (for page refresh recovery)
+  // Enhanced session recovery with better persistence
   useEffect(() => {
     if (!sessionCode && urlCode) {
       // Try to recover session from localStorage
@@ -93,43 +128,112 @@ export default function ClientPage() {
           const sessionData = JSON.parse(storedSession);
           // Check if session is not too old (within last 24 hours)
           const sessionAge = Date.now() - sessionData.timestamp;
-          if (sessionAge < 24 * 60 * 60 * 1000) {
-            // Pre-fill the username but still show the input modal
+          if (
+            sessionAge < 24 * 60 * 60 * 1000 &&
+            sessionData.autoConnect !== false
+          ) {
+            // Auto-connect with stored username - no need to show name input
             setUserName(storedUserName);
             dispatch(setSessionCode(urlCode));
-            setShowNameInput(true); // Always show name input
-            toast.success("Session restored from previous connection");
+            setShowNameInput(false); // Don't show name input for existing session
+            setIsConnecting(true);
+
+            // Update session timestamp to extend validity
+            localStorage.setItem(
+              `audionize_client_session_${urlCode}`,
+              JSON.stringify({
+                ...sessionData,
+                lastActivity: Date.now(),
+                timestamp: Date.now(), // Update timestamp
+                autoConnect: true, // Ensure auto-connect is enabled
+              })
+            );
+
+            toast.success("Session restored - reconnecting automatically");
           } else {
             // Session too old, clear it
             localStorage.removeItem(`audionize_client_session_${urlCode}`);
             localStorage.removeItem(`audionize_user_${urlCode}`);
+            setShowNameInput(true); // Show name input for expired session
           }
         } catch (error) {
           console.error("Error parsing stored session:", error);
           localStorage.removeItem(`audionize_client_session_${urlCode}`);
           localStorage.removeItem(`audionize_user_${urlCode}`);
+          setShowNameInput(true); // Show name input for corrupted session
         }
+      } else {
+        // No stored session, show name input
+        setShowNameInput(true);
       }
     }
   }, [urlCode, sessionCode, dispatch]);
 
-  // Update connection status based on sync service
+  // Update connection status based on sync service with reconnection logic
   useEffect(() => {
     if (syncConnected && userName) {
       setIsConnecting(false);
       dispatch(setSyncStatus("connected"));
-      toast.success("Connected to session!");
-    } else if (userName && !syncConnected) {
-      // Still connecting
-      setIsConnecting(true);
-    }
-  }, [syncConnected, userName, dispatch]);
 
-  // Cleanup on unmount
+      // Clear any pending reconnection timeout
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+
+      toast.success("Connected to session!");
+    } else if (userName && !syncConnected && !hostDisconnected) {
+      // Still connecting or disconnected - attempt reconnection
+      setIsConnecting(true);
+
+      // Set up reconnection timeout if not already set
+      if (!reconnectTimeoutRef.current) {
+        reconnectTimeoutRef.current = setTimeout(() => {
+          console.log("Attempting to reconnect to session...");
+          // The useSyncService hook will handle reconnection automatically
+        }, 5000); // Wait 5 seconds before attempting reconnection
+      }
+    }
+  }, [syncConnected, userName, hostDisconnected, dispatch]);
+
+  // Update session activity timestamp periodically
+  useEffect(() => {
+    if (sessionCode && userName && !hostDisconnected) {
+      const updateInterval = setInterval(() => {
+        const storedSession = localStorage.getItem(
+          `audionize_client_session_${sessionCode}`
+        );
+        if (storedSession) {
+          try {
+            const sessionData = JSON.parse(storedSession);
+            localStorage.setItem(
+              `audionize_client_session_${sessionCode}`,
+              JSON.stringify({
+                ...sessionData,
+                lastActivity: Date.now(),
+              })
+            );
+          } catch (error) {
+            console.error("Error updating session activity:", error);
+          }
+        }
+      }, 60000); // Update every minute
+
+      return () => clearInterval(updateInterval);
+    }
+  }, [sessionCode, userName, hostDisconnected]);
+
+  // Enhanced cleanup on unmount with proper session cleanup
   useEffect(() => {
     return () => {
-      // Clear session from localStorage
-      if (sessionCode) {
+      // Clear reconnection timeout
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+
+      // Clear session from localStorage only if host disconnected or user manually left
+      if (sessionCode && (hostDisconnected || !isPageActive)) {
         localStorage.removeItem(`audionize_client_session_${sessionCode}`);
         localStorage.removeItem(`audionize_user_${sessionCode}`);
       }
@@ -137,7 +241,7 @@ export default function ClientPage() {
       // Stop drift correction
       stopDriftCorrection();
     };
-  }, [sessionCode]);
+  }, [sessionCode, hostDisconnected, isPageActive]);
 
   // Enhanced sync handler with precise timing and drift correction
   const handleSync = (data) => {
@@ -399,13 +503,16 @@ export default function ClientPage() {
     setShowNameInput(false);
     setIsConnecting(true);
 
-    // Store client session info in localStorage for persistence
+    // Store client session info in localStorage for persistence with enhanced data
     localStorage.setItem(
       `audionize_client_session_${sessionCode}`,
       JSON.stringify({
         sessionCode,
         userName: name.trim(),
         timestamp: Date.now(),
+        lastActivity: Date.now(),
+        connectionAttempts: 0,
+        autoConnect: true, // Flag to indicate this session should auto-connect
       })
     );
 
@@ -421,6 +528,9 @@ export default function ClientPage() {
   // Handle manual disconnect
   const handleDisconnect = () => {
     if (window.confirm("Are you sure you want to leave this session?")) {
+      // Mark that user manually left
+      setIsPageActive(false);
+
       // Clear all state
       dispatch(clearSync());
       dispatch(clearSession());
@@ -431,6 +541,12 @@ export default function ClientPage() {
       if (sessionCode) {
         localStorage.removeItem(`audionize_client_session_${sessionCode}`);
         localStorage.removeItem(`audionize_user_${sessionCode}`);
+      }
+
+      // Clear reconnection timeout
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
 
       // Redirect to home page
@@ -514,7 +630,7 @@ export default function ClientPage() {
           <p className="text-slate-400 text-sm">
             Connected as: <span className="font-medium">{userName}</span>
           </p>
-          <div className="mt-4">
+          <div className="mt-4 flex gap-3 justify-center">
             <button
               onClick={handleDisconnect}
               disabled={hostDisconnected}
@@ -525,6 +641,43 @@ export default function ClientPage() {
               }`}
             >
               {hostDisconnected ? "Redirecting..." : "Leave Session"}
+            </button>
+
+            {/* Reset Session Button - allows user to change their name */}
+            <button
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Reset your session? You'll need to enter your name again."
+                  )
+                ) {
+                  // Clear session data
+                  localStorage.removeItem(
+                    `audionize_client_session_${sessionCode}`
+                  );
+                  localStorage.removeItem(`audionize_user_${sessionCode}`);
+
+                  // Reset state
+                  setUserName("");
+                  setShowNameInput(true);
+                  setIsConnecting(false);
+
+                  // Clear sync state
+                  dispatch(clearSync());
+                  dispatch(setAudioUrl(null));
+                  dispatch(setAudioFile(null));
+
+                  toast.success("Session reset - please enter your name");
+                }
+              }}
+              disabled={hostDisconnected}
+              className={`px-4 py-2 rounded text-white text-sm font-medium transition-colors ${
+                hostDisconnected
+                  ? "bg-gray-500 cursor-not-allowed"
+                  : "bg-blue-500 hover:bg-blue-600"
+              }`}
+            >
+              Reset Session
             </button>
           </div>
         </div>
@@ -552,6 +705,16 @@ export default function ClientPage() {
               {syncConnected ? "Connected to Host" : "Disconnected"}
             </div>
           )}
+
+          {/* Page Activity Status */}
+          <div className="ml-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/50">
+            <div
+              className={`w-2 h-2 rounded-full mr-2 ${
+                isPageActive ? "bg-blue-400 animate-pulse" : "bg-gray-400"
+              }`}
+            ></div>
+            {isPageActive ? "Active" : "Inactive"}
+          </div>
         </div>
 
         {/* Modern Audio Player */}

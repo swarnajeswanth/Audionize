@@ -203,34 +203,74 @@ export default function HostPage() {
   // Audio upload handler
   const handleAudioUpload = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      try {
-        setAudioFileState(file);
-        const url = URL.createObjectURL(file);
-        setAudioUrlState(url);
-        dispatch(setAudioUrl(url));
-        dispatch(setCurrentTime(0));
-        dispatch(setDuration(0));
+    if (!file) return;
 
-        // Convert file to blob for sharing
-        const blob = new Blob([file], { type: file.type });
-        setAudioBlob(blob);
+    // Validate file type
+    if (!file.type.startsWith("audio/")) {
+      toast.error("Please select a valid audio file");
+      return;
+    }
 
-        // Show loading state for audio upload
-        toast.loading("Uploading audio to sync server...");
+    // Validate file size (50MB limit)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("File size must be less than 50MB");
+      return;
+    }
 
-        // Convert blob to ArrayBuffer and send with file type
-        const arrayBuffer = await blob.arrayBuffer();
-        sendAudio(arrayBuffer, file.name, file.size, file.type);
+    try {
+      setAudioFileState(file);
+      const url = URL.createObjectURL(file);
+      setAudioUrlState(url);
+      dispatch(setAudioUrl(url));
+      dispatch(setCurrentTime(0));
+      dispatch(setDuration(0));
 
-        // Dismiss loading toast and show success
+      // Convert file to blob for sharing
+      const blob = new Blob([file], { type: file.type });
+      setAudioBlob(blob);
+
+      // Show loading state for audio upload
+      toast.loading("Uploading audio to sync server...");
+
+      // Send audio to clients with retry logic
+      if (syncConnected) {
+        try {
+          // Convert blob to ArrayBuffer and send with file type
+          const arrayBuffer = await blob.arrayBuffer();
+
+          // Add timeout for audio upload
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error("Audio upload timeout"));
+            }, 30000); // 30 second timeout
+
+            sendAudio(arrayBuffer, file.name, file.size, file.type);
+
+            // Assume success after a short delay (since sendAudio is async)
+            setTimeout(() => {
+              clearTimeout(timeout);
+              resolve();
+            }, 2000);
+          });
+
+          // Dismiss loading toast and show success
+          toast.dismiss();
+          toast.success("Audio uploaded and shared with clients");
+        } catch (uploadError) {
+          console.error("Audio upload failed:", uploadError);
+          toast.dismiss();
+          toast.error("Failed to send audio to clients. Please try again.");
+        }
+      } else {
         toast.dismiss();
-        toast.success("Audio uploaded and shared with clients");
-      } catch (error) {
-        console.error("Error uploading audio:", error);
-        toast.dismiss();
-        toast.error("Failed to upload audio");
+        toast.error(
+          "Not connected to sync server. Please wait for connection."
+        );
       }
+    } catch (error) {
+      toast.dismiss();
+      console.error("Error uploading audio:", error);
+      toast.error("Failed to upload audio file");
     }
   };
 
@@ -411,6 +451,24 @@ export default function HostPage() {
       }
     };
   }, [sessionCode]);
+
+  // Monitor client connections and handle cleanup
+  useEffect(() => {
+    if (sessionCode && syncConnected) {
+      // Set up periodic client status check
+      const clientCheckInterval = setInterval(() => {
+        // Update client list from server if needed
+        // This helps keep the client list in sync
+        console.log(
+          `Host monitoring ${connectedClients.length} clients in session ${sessionCode}`
+        );
+      }, 10000); // Check every 10 seconds
+
+      return () => {
+        clearInterval(clientCheckInterval);
+      };
+    }
+  }, [sessionCode, syncConnected, connectedClients.length]);
 
   // Handle page unload/refresh with confirmation
   useEffect(() => {

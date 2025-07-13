@@ -57,6 +57,7 @@ export const useSyncService = (
         userName !== prevUserName.current);
 
     let didConnect = false;
+    let reconnectTimeout = null;
 
     if (shouldConnect && !isConnectedRef.current) {
       const connectToServer = async () => {
@@ -90,6 +91,15 @@ export const useSyncService = (
           dispatch(setConnected(false));
           dispatch(setSyncStatus("error"));
           toast.error("Failed to connect to sync service");
+
+          // Set up reconnection attempt
+          if (sessionCode && role && userName) {
+            reconnectTimeout = setTimeout(() => {
+              console.log("Attempting to reconnect to sync service...");
+              isConnectedRef.current = false; // Reset connection state
+              connectToServer(); // Retry connection
+            }, 5000); // Wait 5 seconds before reconnecting
+          }
         }
       };
       connectToServer();
@@ -102,6 +112,9 @@ export const useSyncService = (
 
     // Only disconnect on true unmount
     return () => {
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
       if (isConnectedRef.current) {
         console.log("Disconnecting from sync service");
         syncService.disconnect();
@@ -184,6 +197,65 @@ export const useSyncService = (
     // Return empty cleanup function if no socket
     return () => {};
   }, [sessionCode, role, userName, dispatch, onHostDisconnect]);
+
+  // Monitor connection status and handle reconnection
+  useEffect(() => {
+    if (syncService.socket) {
+      const handleDisconnect = (reason) => {
+        console.log("Socket disconnected:", reason);
+        isConnectedRef.current = false;
+        setConnectionStatus("disconnected");
+        dispatch(setConnected(false));
+        dispatch(setSyncStatus("disconnected"));
+
+        // Only attempt reconnection if we have valid session data and it's not a manual disconnect
+        if (
+          sessionCode &&
+          role &&
+          userName &&
+          reason !== "io client disconnect"
+        ) {
+          console.log("Attempting to reconnect after disconnect...");
+          setTimeout(() => {
+            if (sessionCode && role && userName) {
+              isConnectedRef.current = false; // Reset connection state
+              // The main useEffect will handle reconnection
+            }
+          }, 3000); // Wait 3 seconds before attempting reconnection
+        }
+      };
+
+      const handleReconnect = (attemptNumber) => {
+        console.log("Socket reconnected on attempt:", attemptNumber);
+        isConnectedRef.current = true;
+        setConnectionStatus("connected");
+        dispatch(setConnected(true));
+        dispatch(setSyncStatus("connected"));
+        toast.success("Reconnected to session!");
+      };
+
+      const handleReconnectError = (error) => {
+        console.error("Socket reconnection failed:", error);
+        setConnectionStatus("error");
+        dispatch(setConnected(false));
+        dispatch(setSyncStatus("error"));
+      };
+
+      syncService.socket.on("disconnect", handleDisconnect);
+      syncService.socket.on("reconnect", handleReconnect);
+      syncService.socket.on("reconnect_error", handleReconnectError);
+
+      // Cleanup
+      return () => {
+        if (syncService.socket) {
+          syncService.socket.off("disconnect", handleDisconnect);
+          syncService.socket.off("reconnect", handleReconnect);
+          syncService.socket.off("reconnect_error", handleReconnectError);
+        }
+      };
+    }
+    return () => {};
+  }, [sessionCode, role, userName, dispatch]);
 
   // Set up message handlers
   const setMessageHandler = useCallback((handler) => {

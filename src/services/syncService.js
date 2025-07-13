@@ -18,6 +18,10 @@ class SyncService {
     this.connectionPromise = null;
     this.pendingOperations = [];
     this.isConnecting = false;
+
+    // Heartbeat management
+    this.heartbeatInterval = null;
+    this.heartbeatIntervalMs = 25000; // Send heartbeat every 25 seconds
   }
 
   // Health check method to test server accessibility
@@ -223,6 +227,9 @@ class SyncService {
           resolve,
           reject
         );
+
+        // Start heartbeat after successful connection
+        this.startHeartbeat();
       } catch (error) {
         console.error("❌ Connection setup failed:", error);
         this.isConnecting = false;
@@ -601,6 +608,35 @@ class SyncService {
     this.onAudioUpdateCallback = callback;
   }
 
+  // Start heartbeat to keep connection alive
+  startHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+
+    this.heartbeatInterval = setInterval(() => {
+      if (this.socket && this.isConnected) {
+        this.socket.emit("heartbeat", {
+          timestamp: Date.now(),
+          sessionCode: this.sessionCode,
+        });
+      }
+    }, this.heartbeatIntervalMs);
+
+    console.log(
+      `Heartbeat started with ${this.heartbeatIntervalMs}ms interval`
+    );
+  }
+
+  // Stop heartbeat
+  stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+      console.log("Heartbeat stopped");
+    }
+  }
+
   // Disconnect
   disconnect() {
     // Skip disconnect if we're in a Node.js environment (server-side rendering)
@@ -608,6 +644,9 @@ class SyncService {
       console.log("Skipping disconnect in server environment");
       return;
     }
+
+    // Stop heartbeat
+    this.stopHeartbeat();
 
     // Clear pending operations
     this.pendingOperations = [];
