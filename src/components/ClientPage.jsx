@@ -632,6 +632,26 @@ export default function ClientPage() {
     );
   }
 
+  // Add this inside the ClientPage component, after refs and hooks
+  useEffect(() => {
+    if (!audioElementRef.current) return;
+    const audio = audioElementRef.current.audio;
+    if (!audio) return;
+    const handleReady = () => {
+      // Emit client-ready event to server
+      if (window && window.navigator && window.navigator.onLine) {
+        const syncService = require("../services/syncService").default;
+        if (syncService.socket) {
+          syncService.socket.emit("client-ready");
+        }
+      }
+    };
+    audio.addEventListener("loadedmetadata", handleReady);
+    return () => {
+      audio.removeEventListener("loadedmetadata", handleReady);
+    };
+  }, [audioUrl]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       <BlueDots />

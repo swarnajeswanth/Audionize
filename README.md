@@ -1,36 +1,133 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Audionize
 
-## Getting Started
+**Audionize** is a modern web app for real-time audio synchronization across multiple devices. Built with Next.js, React, and Socket.IO, it enables seamless group listening experiences—whether on the same network or across the globe.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 🚀 Features
+
+- **Universal Audio Sync:** Host audio playback and synchronize it with clients in real time—works on both LAN and Internet.
+- **Host & Client Modes:** Host uploads audio and controls playback; clients join instantly with a 6-digit code.
+- **Secure Authentication:** Email/password login with NextAuth.js, JWT sessions, bcrypt password hashing, and rate limiting.
+- **Session Management:** Automatic reconnection, heartbeat monitoring, and persistent sessions for reliable group listening.
+- **Modern UI:** Responsive, mobile-friendly interface with Tailwind CSS and smooth GSAP animations.
+- **Production-Ready Security:** CSP, XSS/CSRF protection, security headers, and more. See [SECURITY.md](SECURITY.md).
+- **Open Source:** Easy to deploy, customize, and extend.
+
+---
+
+## 🛠️ Getting Started
+
+1. **Install dependencies:**
+
+   ```bash
+   npm install
+   ```
+
+2. **Configure environment variables:**
+
+   - Copy `.env.local.example` to `.env.local` and set your secrets (see [AUTH_SETUP.md](AUTH_SETUP.md)).
+
+3. **Run the development server:**
+
+   ```bash
+   npm run dev
+   ```
+
+   Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+4. **Sync Server:**  
+   For real-time sync, deploy or run the sync server (see [SYNC_SERVER_SETUP.md](SYNC_SERVER_SETUP.md)).
+
+---
+
+## 🧑‍💻 Project Structure
+
+```
+audionize/
+├── src/
+│   ├── app/                # Next.js app directory
+│   │   ├── api/            # API routes (auth, health, info, network)
+│   │   ├── auth/           # Sign-in and sign-up pages
+│   │   ├── client/         # Client join page
+│   │   └── page.js         # Main app entry
+│   ├── components/         # React UI components
+│   ├── hooks/              # Custom React hooks
+│   ├── lib/                # API config (Axios, helpers)
+│   ├── services/           # API service layer
+│   ├── store/              # Redux state management
+│   └── utils/              # Utility functions (security, users)
+├── public/                 # Static assets
+├── server.js               # Sync server (Socket.IO)
+├── SECURITY.md             # Security implementation details
+├── SYNC_SERVER_SETUP.md    # Sync server deployment guide
+├── CLIENT_SESSION_IMPROVEMENTS.md
+├── USER_FLOW.md
+├── AUTH_SETUP.md
+├── CLEANUP_SUMMARY.md
+└── README.md               # This file
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## 🔒 Security
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Input validation & sanitization**
+- **Rate limiting** on authentication and API
+- **Password hashing** with bcryptjs
+- **JWT session management**
+- **Security headers** (CSP, XSS, etc.)
+- **CSRF protection**
+- **Session management**
+- **Error handling** without sensitive data
+- **HTTPS enforcement** (middleware)
+- **File upload validation**
+- **WebSocket authentication**
 
-## Learn More
+See [SECURITY.md](SECURITY.md) for full details.
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🌐 Deployment
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Frontend:** Deploy on [Vercel](https://vercel.com), [Netlify](https://netlify.com), or your preferred platform.
+- **Sync Server:** Deploy on [Render](https://render.com), Railway, or run locally.  
+  See [SYNC_SERVER_SETUP.md](SYNC_SERVER_SETUP.md) for instructions.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 👤 Authentication
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Sign Up:** `/auth/signup`
+- **Sign In:** `/auth/signin`
+- **Protected Routes:** `/host`, `/settings`
+- **Demo Account:**
+  - Email: `admin@audionize.com`
+  - Password: `password`
+
+See [AUTH_SETUP.md](AUTH_SETUP.md) for more.
+
+---
+
+## 📖 Documentation
+
+- [USER_FLOW.md](USER_FLOW.md): User journey and authentication flow
+- [SYNC_FEATURES.md](SYNC_FEATURES.md): Audio sync features and technical details
+- [CLIENT_SESSION_IMPROVEMENTS.md](CLIENT_SESSION_IMPROVEMENTS.md): Session reliability improvements
+- [CLEANUP_SUMMARY.md](CLEANUP_SUMMARY.md): Codebase and security summary
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please open issues or pull requests for improvements and bug fixes.
+
+---
+
+## 📚 Resources
+
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Socket.IO Documentation](https://socket.io/docs/)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+
+---

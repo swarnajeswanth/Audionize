@@ -44,6 +44,7 @@ export default function HostPage() {
   const [audioBlob, setAudioBlob] = useState(null);
   const [playDelay, setPlayDelay] = useState(2000); // 2 seconds default
   const [isPlayScheduled, setIsPlayScheduled] = useState(false);
+  const [allClientsReady, setAllClientsReady] = useState(false);
 
   const audioElementRef = useRef(null);
 
@@ -505,6 +506,21 @@ export default function HostPage() {
     };
   }, [sessionCode, connectedClients.length]);
 
+  // Add this effect to reset ready state on audio upload or client join/leave
+  useEffect(() => {
+    if (!sessionCode) return;
+    if (!window || !window.document) return;
+    const syncService = require("../services/syncService").default;
+    if (!syncService.socket) return;
+    const resetReady = () => setAllClientsReady(false);
+    syncService.socket.on("audio-uploaded", resetReady);
+    syncService.socket.on("presence-update", resetReady);
+    return () => {
+      syncService.socket.off("audio-uploaded", resetReady);
+      syncService.socket.off("presence-update", resetReady);
+    };
+  }, [sessionCode]);
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-slate-800/40 backdrop-blur-md border border-white/20 rounded-xl p-6 mb-6">
@@ -741,6 +757,16 @@ export default function HostPage() {
         {/* Modern Audio Player */}
         {audioUrl ? (
           <div className="mb-6">
+            {!allClientsReady && (
+              <div className="mb-4 p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
+                <div className="flex items-center justify-center">
+                  <div className="animate-pulse rounded-full h-4 w-4 border-2 border-yellow-400 mr-2"></div>
+                  <span className="text-yellow-300 text-sm">
+                    Waiting for all clients to be ready...
+                  </span>
+                </div>
+              </div>
+            )}
             {isPlayScheduled && (
               <div className="mb-4 p-3 bg-blue-500/20 border border-blue-500/30 rounded-lg">
                 <div className="flex items-center justify-center">
@@ -759,7 +785,7 @@ export default function HostPage() {
               onSeek={handleSeek}
               onVolumeChange={handleVolumeChange}
               isHost={true}
-              disabled={!syncConnected} // <-- Only enable controls when socket is connected
+              disabled={!syncConnected || !allClientsReady} // <-- Only enable controls when socket is connected and all clients are ready
             />
 
             {/* Sync Button */}
