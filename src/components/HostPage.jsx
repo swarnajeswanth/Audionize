@@ -335,8 +335,7 @@ export default function HostPage() {
       return;
     }
 
-    // Reduce play delay for faster sync (200ms instead of 2000ms)
-    const playDelay = 200; // 200ms delay for millisecond precision
+    // Use the playDelay from state (not hardcoded)
     const scheduledTime = Date.now() + playDelay;
     sendPlay(scheduledTime, currentTime);
 
