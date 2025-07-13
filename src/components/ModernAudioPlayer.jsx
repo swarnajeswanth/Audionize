@@ -141,22 +141,67 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
     }
   };
 
-  // If client seeks near buffer edge, increase minBufferPercent
+  // Enhanced seek handling for both host and client
   const handleSeek = (e) => {
-    if (!audioRef.current || disabled || isHost) return;
+    if (!audioRef.current || disabled) return;
+
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const width = rect.width;
     const seekTime = (clickX / width) * duration;
+
+    // Host can seek freely and control clients
+    if (isHost) {
+      audioRef.current.currentTime = seekTime;
+      dispatch(setCurrentTime(seekTime));
+      if (onSeek) onSeek(seekTime);
+      return;
+    }
+
+    // Client seeking logic with buffer management
     const bufferEdge = (bufferedPercent / 100) * duration;
+
     // If seeking within 10% of buffer edge, increase buffer threshold
     if (seekTime > bufferEdge - duration * 0.1) {
       setMinBufferPercent(Math.min(80, minBufferPercent + 20));
       setWaitingForBuffer(true);
+      console.log(
+        `[CLIENT] Seeking near buffer edge, increasing buffer threshold to ${
+          minBufferPercent + 20
+        }%`
+      );
     }
-    audioRef.current.currentTime = seekTime;
-    dispatch(setCurrentTime(seekTime));
-    if (onSeek) onSeek(seekTime);
+
+    // Check if seeking beyond current buffer
+    if (seekTime > bufferEdge) {
+      console.log(
+        `[CLIENT] Seeking beyond buffer (${seekTime.toFixed(
+          2
+        )}s > ${bufferEdge.toFixed(2)}s), waiting for buffer`
+      );
+      setWaitingForBuffer(true);
+
+      // Wait for buffer to catch up
+      const checkBuffer = () => {
+        const newBufferEdge = (bufferedPercent / 100) * duration;
+        if (seekTime <= newBufferEdge) {
+          audioRef.current.currentTime = seekTime;
+          dispatch(setCurrentTime(seekTime));
+          setWaitingForBuffer(false);
+          console.log(
+            `[CLIENT] Buffer caught up, seeking to ${seekTime.toFixed(2)}s`
+          );
+        } else {
+          setTimeout(checkBuffer, 100);
+        }
+      };
+      checkBuffer();
+    } else {
+      // Safe to seek immediately
+      audioRef.current.currentTime = seekTime;
+      dispatch(setCurrentTime(seekTime));
+      console.log(`[CLIENT] Safe seek to ${seekTime.toFixed(2)}s`);
+    }
   };
 
   // Handle volume change
@@ -327,21 +372,34 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
         <div
           className={`relative h-2 rounded-full overflow-hidden ${
             isHost && !disabled && audioUrl
-              ? "cursor-pointer"
+              ? "cursor-pointer hover:bg-slate-500/20"
               : "cursor-not-allowed opacity-60"
           }`}
-          onClick={isHost ? handleSeek : undefined}
+          onClick={isHost && !disabled && audioUrl ? handleSeek : undefined}
           onMouseEnter={() => setIsProgressHovered(true)}
           onMouseLeave={() => setIsProgressHovered(false)}
         >
           {/* Background */}
           <div className="absolute inset-0 bg-slate-600/30 rounded-full"></div>
 
+          {/* Buffer Fill */}
+          <div
+            className="absolute top-0 left-0 h-full bg-slate-500/30 rounded-full"
+            style={{ width: `${bufferedPercent}%` }}
+          ></div>
+
           {/* Progress */}
           <div
             className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full transition-all duration-300"
             style={{ width: `${progressPercentage}%` }}
           ></div>
+
+          {/* Buffer Waiting Indicator */}
+          {waitingForBuffer && !isHost && (
+            <div className="absolute inset-0 bg-yellow-500/20 rounded-full animate-pulse">
+              <div className="absolute top-0 left-0 h-full bg-yellow-400/40 rounded-full animate-ping"></div>
+            </div>
+          )}
 
           {/* Progress Glow */}
           <div
@@ -365,6 +423,18 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
           <span>{formatTime(currentTime)}</span>
           <span>{formatTime(duration)}</span>
         </div>
+
+        {/* Buffer Info (for clients) */}
+        {!isHost && audioUrl && (
+          <div className="text-center text-xs text-slate-500 mt-1">
+            Buffer: {bufferedPercent.toFixed(1)}%
+            {waitingForBuffer && (
+              <span className="text-yellow-400 ml-2">
+                ⏳ Waiting for buffer...
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Status Indicator */}

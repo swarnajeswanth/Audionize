@@ -396,6 +396,13 @@ export default function HostPage() {
       return;
     }
 
+    console.log(
+      `[HOST] Seeking to ${time.toFixed(2)}s and syncing with ${
+        connectedClients.length
+      } clients`
+    );
+
+    // Send seek command to all clients
     sendSeek(time);
 
     // Seek immediately for host
@@ -405,6 +412,25 @@ export default function HostPage() {
 
     // Update local state immediately for responsive UI
     dispatch(setCurrentTime(time));
+
+    // Show feedback to host
+    if (connectedClients.length > 0) {
+      toast.success(
+        `Seeked to ${formatTime(time)} - syncing with ${
+          connectedClients.length
+        } clients`
+      );
+    } else {
+      toast.info(`Seeked to ${formatTime(time)}`);
+    }
+  };
+
+  // Helper function to format time
+  const formatTime = (seconds) => {
+    if (!seconds || isNaN(seconds)) return "0:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   const handleVolumeChange = (volume) => {

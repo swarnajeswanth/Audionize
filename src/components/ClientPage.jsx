@@ -32,7 +32,7 @@ export default function ClientPage() {
   const dispatch = useAppDispatch();
   const searchParams = useSearchParams();
   const { sessionCode } = useAppSelector((state) => state.session);
-  const { audioUrl } = useAppSelector((state) => state.audio);
+  const { audioUrl, isPlaying } = useAppSelector((state) => state.audio);
   const { isConnected } = useAppSelector((state) => state.sync);
 
   const [userName, setUserName] = useState("");
@@ -248,6 +248,13 @@ export default function ClientPage() {
     };
   }, [sessionCode, hostDisconnected, isPageActive]);
 
+  // Stop drift correction when audio stops playing
+  useEffect(() => {
+    if (!isPlaying) {
+      stopDriftCorrection();
+    }
+  }, [isPlaying]);
+
   // Enhanced sync handler with precise timing and drift correction
   const handleSync = (data) => {
     console.log("Received sync command:", data);
@@ -355,12 +362,54 @@ export default function ClientPage() {
     dispatch(setCurrentTime(currentTime));
   };
 
-  // Precise seek synchronization
+  // Enhanced seek synchronization with buffer management
   const handleSeekSync = (data, now, audio) => {
     const { currentTime } = data;
+    console.log(
+      `[CLIENT] Received seek command from host: ${currentTime.toFixed(2)}s`
+    );
 
-    audio.currentTime = currentTime;
-    dispatch(setCurrentTime(currentTime));
+    // Check if we can seek safely
+    const bufferEdge =
+      audio.buffered.length > 0
+        ? audio.buffered.end(audio.buffered.length - 1)
+        : 0;
+
+    if (currentTime <= bufferEdge) {
+      // Safe to seek immediately
+      audio.currentTime = currentTime;
+      dispatch(setCurrentTime(currentTime));
+      console.log(
+        `[CLIENT] Safe seek to ${currentTime.toFixed(
+          2
+        )}s (buffer edge: ${bufferEdge.toFixed(2)}s)`
+      );
+    } else {
+      // Need to wait for buffer
+      console.log(
+        `[CLIENT] Seek beyond buffer (${currentTime.toFixed(
+          2
+        )}s > ${bufferEdge.toFixed(2)}s), waiting...`
+      );
+
+      const waitForBuffer = () => {
+        const newBufferEdge =
+          audio.buffered.length > 0
+            ? audio.buffered.end(audio.buffered.length - 1)
+            : 0;
+        if (currentTime <= newBufferEdge) {
+          audio.currentTime = currentTime;
+          dispatch(setCurrentTime(currentTime));
+          console.log(
+            `[CLIENT] Buffer caught up, seeking to ${currentTime.toFixed(2)}s`
+          );
+        } else {
+          // Continue waiting
+          setTimeout(waitForBuffer, 100);
+        }
+      };
+      waitForBuffer();
+    }
   };
 
   // Volume synchronization
@@ -438,7 +487,7 @@ export default function ClientPage() {
   const handleTimeUpdateSync = (data, now, audio) => {
     const { currentTime, timestamp } = data;
 
-    if (!audio || audio.paused) return;
+    if (!audio || audio.paused || !lastHostTimestamp) return;
 
     // Calculate expected time based on host's time and elapsed time
     const timeElapsed = (now - lastHostTimestamp) / 1000;
@@ -468,24 +517,35 @@ export default function ClientPage() {
     stopDriftCorrection(); // Clear any existing interval
 
     const interval = setInterval(() => {
-      if (!audioElementRef.current?.audio || !isPlaying) {
+      // Add comprehensive safety checks to prevent errors
+      if (
+        !audioElementRef.current?.audio ||
+        !isPlaying ||
+        !lastHostTimestamp ||
+        !audioElementRef.current.audio.readyState
+      ) {
         stopDriftCorrection();
         return;
       }
 
-      const audio = audioElementRef.current.audio;
-      const now = Date.now();
-      const expectedTime = lastHostTime + (now - lastHostTimestamp) / 1000;
-      const actualTime = audio.currentTime;
-      const drift = actualTime - expectedTime;
+      try {
+        const audio = audioElementRef.current.audio;
+        const now = Date.now();
+        const expectedTime = lastHostTime + (now - lastHostTimestamp) / 1000;
+        const actualTime = audio.currentTime;
+        const drift = actualTime - expectedTime;
 
-      // Only correct if drift is significant (>50ms)
-      if (Math.abs(drift) > 0.05) {
-        console.log(`Drift correction: ${drift.toFixed(3)}s`);
-        audio.currentTime = expectedTime;
-        setDriftCorrection(drift);
-      } else {
-        setDriftCorrection(0);
+        // Only correct if drift is significant (>50ms)
+        if (Math.abs(drift) > 0.05) {
+          console.log(`Drift correction: ${drift.toFixed(3)}s`);
+          audio.currentTime = expectedTime;
+          setDriftCorrection(drift);
+        } else {
+          setDriftCorrection(0);
+        }
+      } catch (error) {
+        console.error("Error in drift correction:", error);
+        stopDriftCorrection();
       }
     }, 500); // Check every 500ms instead of 1000ms for more responsive correction
 
@@ -1073,7 +1133,8 @@ export default function ClientPage() {
             <p className="text-slate-400 max-w-md mx-auto">
               The host will upload audio and start the session. You'll see the
               music player here once they begin. You can control your volume,
-              but playback is controlled by the host.
+              but playback and seeking are controlled by the host. The system
+              will automatically sync you to the host's position.
             </p>
           </div>
         )}
@@ -1122,7 +1183,9 @@ export default function ClientPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-300">Player Control:</span>
-              <span className="text-blue-400 font-medium">Volume Only</span>
+              <span className="text-blue-400 font-medium">
+                Volume Only (Host Controls Seek)
+              </span>
             </div>
             {process.env.NODE_ENV === "development" && (
               <>
