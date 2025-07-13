@@ -144,7 +144,7 @@ export const useSyncService = (
     }
     // Return empty cleanup function if no socket
     return () => {};
-  }, [sessionCode, role, userName]);
+  }, []);
 
   // Handle host disconnection - always call useEffect
   useEffect(() => {
@@ -196,7 +196,7 @@ export const useSyncService = (
     }
     // Return empty cleanup function if no socket
     return () => {};
-  }, [sessionCode, role, userName, dispatch, onHostDisconnect]);
+  }, [sessionCode, dispatch, onHostDisconnect]);
 
   // Monitor connection status and handle reconnection
   useEffect(() => {
