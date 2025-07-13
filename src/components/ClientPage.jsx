@@ -515,6 +515,30 @@ export default function ClientPage() {
     }
   }, [setMessageHandler, sessionCode, userName, handleSync]);
 
+  // Handle audio upload errors
+  useEffect(() => {
+    if (sessionCode && userName) {
+      const syncService = require("../services/syncService").default;
+      if (syncService.socket) {
+        const handleAudioUploadError = (error) => {
+          console.error("Audio upload error:", error);
+          toast.error(`Audio upload failed: ${error.message}`);
+        };
+
+        syncService.socket.on("audio-upload-error", handleAudioUploadError);
+
+        return () => {
+          if (syncService.socket) {
+            syncService.socket.off(
+              "audio-upload-error",
+              handleAudioUploadError
+            );
+          }
+        };
+      }
+    }
+  }, [sessionCode, userName]);
+
   // Ensure handleAudioSync is defined first
   const handleAudioSync = useCallback(
     (data) => {
@@ -530,11 +554,25 @@ export default function ClientPage() {
           dispatch(setAudioUrl(url));
           dispatch(setAudioFile(audioBlob));
           toast.success("New audio received from host");
+
+          // Emit client-ready after successfully loading audio
+          const syncService = require("../services/syncService").default;
+          if (syncService.socket) {
+            console.log("Emitting client-ready after audio load");
+            syncService.socket.emit("client-ready");
+          }
         }
         // Handle audio URL data
         else if (data.audioUrl) {
           dispatch(setAudioUrl(data.audioUrl));
           toast.success("New audio received from host");
+
+          // Emit client-ready after successfully loading audio
+          const syncService = require("../services/syncService").default;
+          if (syncService.socket) {
+            console.log("Emitting client-ready after audio load");
+            syncService.socket.emit("client-ready");
+          }
         }
       } catch (error) {
         console.error("Error processing audio sync:", error);

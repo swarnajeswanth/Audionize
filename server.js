@@ -178,40 +178,110 @@ io.on("connection", (socket) => {
       console.log(
         `[AUDIO-UPLOAD] Received audio upload from ${socket.id} (size: ${
           audio?.fileSize || "unknown"
-        })`
+        }, type: ${audio?.fileType || "unknown"})`
       );
-      // Optional: Validate file size (reject if >100MB)
-      if (audio && audio.fileSize && audio.fileSize > 100 * 1024 * 1024) {
+
+      // Enhanced validation
+      if (!audio) {
+        console.error(
+          `[AUDIO-UPLOAD-ERROR] No audio data received from ${socket.id}`
+        );
+        socket.emit("audio-upload-error", {
+          message: "No audio data received",
+        });
+        return;
+      }
+
+      // Validate file size (reject if >100MB)
+      if (audio.fileSize && audio.fileSize > 100 * 1024 * 1024) {
+        console.error(
+          `[AUDIO-UPLOAD-ERROR] File too large: ${audio.fileSize} bytes`
+        );
         socket.emit("audio-upload-error", {
           message: "File too large (max 100MB)",
         });
         return;
       }
-      sessions[socket.session].audio = audio;
-      socket.to(socket.session).emit("audio-uploaded", audio);
-      socket.to(socket.session).emit("audio_sync", audio);
-      if (
-        sessions[socket.session].host &&
-        sessions[socket.session].host.id !== socket.id
-      ) {
-        sessions[socket.session].host.socket.emit("audio-uploaded", audio);
-        sessions[socket.session].host.socket.emit("audio_sync", audio);
+
+      // Validate file type
+      if (audio.fileType && !audio.fileType.startsWith("audio/")) {
+        console.error(
+          `[AUDIO-UPLOAD-ERROR] Invalid file type: ${audio.fileType}`
+        );
+        socket.emit("audio-upload-error", {
+          message: "Invalid audio file type",
+        });
+        return;
       }
-      if (readyClients[socket.session]) readyClients[socket.session].clear();
+
+      try {
+        sessions[socket.session].audio = audio;
+        console.log(
+          `[AUDIO-UPLOAD-SUCCESS] Audio stored for session ${socket.session}`
+        );
+
+        // Emit to other clients
+        socket.to(socket.session).emit("audio-uploaded", audio);
+        socket.to(socket.session).emit("audio_sync", audio);
+
+        // Emit to host if different from uploader
+        if (
+          sessions[socket.session].host &&
+          sessions[socket.session].host.id !== socket.id
+        ) {
+          sessions[socket.session].host.socket.emit("audio-uploaded", audio);
+          sessions[socket.session].host.socket.emit("audio_sync", audio);
+        }
+
+        // Clear ready clients since new audio was uploaded
+        if (readyClients[socket.session]) {
+          readyClients[socket.session].clear();
+          console.log(
+            `[AUDIO-UPLOAD] Cleared ready clients for session ${socket.session}`
+          );
+        }
+
+        console.log(
+          `[AUDIO-UPLOAD-COMPLETE] Audio upload processed successfully for session ${socket.session}`
+        );
+      } catch (error) {
+        console.error(
+          `[AUDIO-UPLOAD-ERROR] Error processing audio upload:`,
+          error
+        );
+        socket.emit("audio-upload-error", {
+          message: "Error processing audio upload",
+        });
+      }
     }
   });
 
   socket.on("client-ready", () => {
     if (socket.session && sessions[socket.session]) {
+      console.log(
+        `[CLIENT-READY] Client ${socket.id} (${socket.name}) is ready in session ${socket.session}`
+      );
+
       if (!readyClients[socket.session])
         readyClients[socket.session] = new Set();
       readyClients[socket.session].add(socket.id);
+
       // Check if all clients are ready
       const allClientIds = sessions[socket.session].clients.map((c) => c.id);
       const allReady =
         allClientIds.length > 0 &&
         allClientIds.every((id) => readyClients[socket.session].has(id));
+
+      console.log(
+        `[CLIENT-READY] Session ${socket.session}: ${
+          readyClients[socket.session].size
+        }/${allClientIds.length} clients ready`
+      );
+
       if (allReady && sessions[socket.session].host) {
+        console.log(
+          `[ALL-CLIENTS-READY] All clients ready in session ${socket.session}, notifying host`
+        );
         sessions[socket.session].host.socket.emit("all-clients-ready");
       }
     }

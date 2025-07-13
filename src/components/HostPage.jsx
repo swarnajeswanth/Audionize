@@ -512,12 +512,26 @@ export default function HostPage() {
     if (!window || !window.document) return;
     const syncService = require("../services/syncService").default;
     if (!syncService.socket) return;
-    const resetReady = () => setAllClientsReady(false);
+
+    const resetReady = () => {
+      console.log("Resetting all clients ready state");
+      setAllClientsReady(false);
+    };
+
+    const handleAllClientsReady = () => {
+      console.log("All clients are ready!");
+      setAllClientsReady(true);
+      toast.success("All clients are ready to play!");
+    };
+
     syncService.socket.on("audio-uploaded", resetReady);
     syncService.socket.on("presence-update", resetReady);
+    syncService.socket.on("all-clients-ready", handleAllClientsReady);
+
     return () => {
       syncService.socket.off("audio-uploaded", resetReady);
       syncService.socket.off("presence-update", resetReady);
+      syncService.socket.off("all-clients-ready", handleAllClientsReady);
     };
   }, [sessionCode]);
 
