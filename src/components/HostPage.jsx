@@ -31,6 +31,7 @@ import {
 import { useSyncService } from "../hooks/useSyncService";
 import ModernAudioPlayer from "./ModernAudioPlayer";
 import toast from "react-hot-toast";
+import LoadingState from "./LoadingState";
 
 export default function HostPage() {
   const dispatch = useAppDispatch();
@@ -46,6 +47,7 @@ export default function HostPage() {
   const [isPlayScheduled, setIsPlayScheduled] = useState(false);
   const [allClientsReady, setAllClientsReady] = useState(false);
   const [readyClients, setReadyClients] = useState([]);
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   const audioElementRef = useRef(null);
 
@@ -553,6 +555,39 @@ export default function HostPage() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [sessionCode, connectedClients.length]);
+
+  // Reconnect logic
+  useEffect(() => {
+    const syncService = require("../services/syncService").default;
+    if (!syncService.socket) return;
+    const handleDisconnect = () => {
+      setIsReconnecting(true);
+      // Try to reconnect after a short delay
+      setTimeout(() => {
+        syncService
+          .connect(sessionCode, "host", user?.name || "Host")
+          .then(() => {
+            setIsReconnecting(false);
+          });
+      }, 2000);
+    };
+    syncService.socket.on("disconnect", handleDisconnect);
+    return () => {
+      syncService.socket.off("disconnect", handleDisconnect);
+    };
+  }, [sessionCode, user?.name]);
+
+  if (isReconnecting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingState
+          isLoading={true}
+          loadingText="Reconnecting..."
+          size="large"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto">

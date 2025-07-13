@@ -40,6 +40,7 @@ export default function ClientPage() {
   const [showNameInput, setShowNameInput] = useState(false);
   const [hostDisconnected, setHostDisconnected] = useState(false);
   const [isPageActive, setIsPageActive] = useState(true); // Track if page is active
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   // Drift correction state
   const [lastHostTime, setLastHostTime] = useState(0);
@@ -671,6 +672,24 @@ export default function ClientPage() {
     }
   }, [sessionCode]);
 
+  useEffect(() => {
+    const syncService = require("../services/syncService").default;
+    if (!syncService.socket) return;
+    const handleDisconnect = () => {
+      setIsReconnecting(true);
+      // Try to reconnect after a short delay
+      setTimeout(() => {
+        syncService.connect(sessionCode, "client", userName).then(() => {
+          setIsReconnecting(false);
+        });
+      }, 2000);
+    };
+    syncService.socket.on("disconnect", handleDisconnect);
+    return () => {
+      syncService.socket.off("disconnect", handleDisconnect);
+    };
+  }, [sessionCode, userName]);
+
   // Show loading if no session code
   if (!sessionCode) {
     return (
@@ -705,6 +724,18 @@ export default function ClientPage() {
         <LoadingState
           isLoading={true}
           loadingText="Connecting to session..."
+          size="large"
+        />
+      </div>
+    );
+  }
+
+  if (isReconnecting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingState
+          isLoading={true}
+          loadingText="Reconnecting..."
           size="large"
         />
       </div>

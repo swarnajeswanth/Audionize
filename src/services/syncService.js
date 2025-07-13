@@ -21,7 +21,7 @@ class SyncService {
 
     // Heartbeat management
     this.heartbeatInterval = null;
-    this.heartbeatIntervalMs = 25000; // Send heartbeat every 25 seconds
+    this.heartbeatIntervalMs = 10000; // Send heartbeat every 10 seconds
   }
 
   // Health check method to test server accessibility
