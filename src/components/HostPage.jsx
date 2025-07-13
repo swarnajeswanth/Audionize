@@ -44,9 +44,6 @@ export default function HostPage() {
   const [audioBlob, setAudioBlob] = useState(null);
   const [playDelay, setPlayDelay] = useState(2000); // 2 seconds default
   const [isPlayScheduled, setIsPlayScheduled] = useState(false);
-  // Add state for tracking if all clients are ready
-  const [allClientsReady, setAllClientsReady] = useState(false);
-  const [waitingForClients, setWaitingForClients] = useState(false);
 
   const audioElementRef = useRef(null);
 
@@ -210,50 +207,6 @@ export default function HostPage() {
     };
   }, [sessionCode, dispatch]);
 
-  // Add effect to handle all-clients-ready event
-  useEffect(() => {
-    if (!sessionCode) return;
-    if (!window || !window.document) return;
-
-    const syncService = require("../services/syncService").default;
-    if (!syncService.socket) return;
-
-    const handleAllClientsReady = (data) => {
-      console.log("All clients ready:", data);
-      setAllClientsReady(true);
-      setWaitingForClients(false);
-      toast.success(`All ${data.totalClients} clients are ready!`);
-    };
-
-    const handleClientJoined = (data) => {
-      // Reset ready state when new client joins
-      setAllClientsReady(false);
-      setWaitingForClients(true);
-      toast.success(
-        "New client joined - waiting for all clients to be ready..."
-      );
-    };
-
-    const handleClientLeft = (data) => {
-      // Reset ready state when client leaves
-      setAllClientsReady(false);
-      setWaitingForClients(true);
-      toast.success(
-        "Client left - waiting for remaining clients to be ready..."
-      );
-    };
-
-    syncService.socket.on("all-clients-ready", handleAllClientsReady);
-    syncService.socket.on("user-joined", handleClientJoined);
-    syncService.socket.on("user-left", handleClientLeft);
-
-    return () => {
-      syncService.socket.off("all-clients-ready", handleAllClientsReady);
-      syncService.socket.off("user-joined", handleClientJoined);
-      syncService.socket.off("user-left", handleClientLeft);
-    };
-  }, [sessionCode]);
-
   // Periodically broadcast host time for drift correction
   useEffect(() => {
     if (isPlaying && syncConnected) {
@@ -345,11 +298,6 @@ export default function HostPage() {
       return;
     }
 
-    if (!allClientsReady && connectedClients.length > 0) {
-      toast.error("Please wait for all clients to be ready before playing.");
-      return;
-    }
-
     // Use configurable delay for better sync
     const scheduledTime = Date.now() + playDelay;
     sendPlay(scheduledTime, currentTime);
@@ -421,13 +369,12 @@ export default function HostPage() {
   // Client management
   const handleMuteClient = (clientId) => {
     // Implementation for muting specific client
-    toast.success("Client mute functionality coming soon");
+    toast.info("Client mute functionality coming soon");
   };
 
   const handleDisconnectClient = (clientId) => {
-    const syncService = require("../services/syncService").default;
-    syncService.disconnectClient(clientId);
-    toast.success("Client disconnect requested");
+    // Implementation for disconnecting specific client
+    toast.info("Client disconnect functionality coming soon");
   };
 
   // Enhanced sync all clients to current position
@@ -804,30 +751,6 @@ export default function HostPage() {
                 </div>
               </div>
             )}
-            {/* Client Ready Status */}
-            {connectedClients.length > 0 && !allClientsReady && (
-              <div className="mb-4 p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-400 mr-2"></div>
-                  <span className="text-yellow-300 text-sm">
-                    Waiting for all clients to be ready... (
-                    {connectedClients.length} connected)
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {connectedClients.length > 0 && allClientsReady && (
-              <div className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-lg">
-                <div className="flex items-center justify-center">
-                  <div className="w-4 h-4 rounded-full bg-green-400 mr-2"></div>
-                  <span className="text-green-300 text-sm">
-                    All clients ready! You can now play.
-                  </span>
-                </div>
-              </div>
-            )}
-
             <ModernAudioPlayer
               ref={audioElementRef}
               audioUrl={audioUrl}
@@ -836,10 +759,7 @@ export default function HostPage() {
               onSeek={handleSeek}
               onVolumeChange={handleVolumeChange}
               isHost={true}
-              disabled={
-                !syncConnected ||
-                (connectedClients.length > 0 && !allClientsReady)
-              } // Disable if not connected or waiting for clients
+              disabled={!syncConnected} // <-- Only enable controls when socket is connected
             />
 
             {/* Sync Button */}

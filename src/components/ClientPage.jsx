@@ -47,9 +47,6 @@ export default function ClientPage() {
   const [driftCorrection, setDriftCorrection] = useState(0);
   const [syncInterval, setSyncInterval] = useState(null);
 
-  // Add state for tracking if client is ready
-  const [isClientReady, setIsClientReady] = useState(false);
-
   const audioElementRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const pageVisibilityRef = useRef(null);
@@ -466,22 +463,6 @@ export default function ClientPage() {
   // Handle loaded metadata
   const handleLoadedMetadata = () => {
     // Audio metadata loaded
-    if (audioElementRef.current?.audio) {
-      dispatch(setDuration(audioElementRef.current.audio.duration));
-
-      // Emit client-ready when audio metadata is loaded
-      if (syncConnected && !isClientReady) {
-        const syncService = require("../services/syncService").default;
-        if (syncService.socket) {
-          syncService.socket.emit("client-ready", {
-            sessionCode: sessionCode,
-            timestamp: Date.now(),
-          });
-          setIsClientReady(true);
-          console.log("Client ready event emitted (from loaded metadata)");
-        }
-      }
-    }
   };
 
   // Client Audio Player Event Handlers (client only controls volume/mute)
@@ -610,45 +591,6 @@ export default function ClientPage() {
       }
     }
   }, [sessionCode]);
-
-  // Enhanced audio event handling and client-ready emission
-  useEffect(() => {
-    const syncService = require("../services/syncService").default;
-    if (syncService && syncService.onAudioSync) {
-      syncService.onAudioSync((data) => {
-        // Handle audio buffer data
-        if (data.audioBuffer) {
-          const audioBlob = new Blob([new Uint8Array(data.audioBuffer)], {
-            type: data.fileType || "audio/mpeg",
-          });
-          setAudioBlob(audioBlob);
-          const url = URL.createObjectURL(audioBlob);
-          dispatch(setAudioUrl(url));
-          dispatch(setAudioFile(audioBlob));
-          toast.success("New audio received from host");
-        } else if (data.audioUrl) {
-          dispatch(setAudioUrl(data.audioUrl));
-          toast.success("New audio received from host");
-        }
-        // Emit client-ready after audio is set
-        if (syncService.socket) {
-          syncService.socket.emit("client-ready", {
-            sessionCode: sessionCode,
-            timestamp: Date.now(),
-          });
-          setIsClientReady(true);
-          console.log("Client ready event emitted (from audio event)");
-        }
-      });
-    }
-  }, [dispatch, sessionCode]);
-
-  // Reset client ready state when audio changes
-  useEffect(() => {
-    if (audioUrl) {
-      setIsClientReady(false);
-    }
-  }, [audioUrl]);
 
   // Show loading if no session code
   if (!sessionCode) {
