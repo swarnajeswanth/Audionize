@@ -577,6 +577,21 @@ export default function ClientPage() {
     }
   }, [setClientUpdateHandler, sessionCode, userName]);
 
+  // Add this effect after your imports and before the return statement
+  useEffect(() => {
+    if (sessionCode) {
+      const storedUserName = localStorage.getItem(
+        `audionize_user_${sessionCode}`
+      );
+      if (storedUserName) {
+        setUserName(storedUserName);
+        setShowNameInput(false);
+      } else {
+        setShowNameInput(true);
+      }
+    }
+  }, [sessionCode]);
+
   // Show loading if no session code
   if (!sessionCode) {
     return (
@@ -591,7 +606,7 @@ export default function ClientPage() {
   }
 
   // Show name input if no username or if name input modal is active
-  if (!userName || showNameInput) {
+  if (!userName && showNameInput) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <NameInputModal

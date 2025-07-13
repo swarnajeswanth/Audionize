@@ -26,6 +26,7 @@ import {
   removeConnectedClient,
   addSyncMessage,
   clearSync,
+  presenceUpdate,
 } from "../store/slices/syncSlice";
 import { useSyncService } from "../hooks/useSyncService";
 import ModernAudioPlayer from "./ModernAudioPlayer";
@@ -189,6 +190,22 @@ export default function HostPage() {
       }
     });
   }, [setMessageHandler, setClientUpdateHandler, dispatch]);
+
+  // Add this effect after the sync service setup
+  useEffect(() => {
+    if (!sessionCode) return;
+    if (!window || !window.document) return;
+    // Access the socket from syncService
+    const syncService = require("../services/syncService").default;
+    if (!syncService.socket) return;
+    const handlePresenceUpdate = (data) => {
+      dispatch(presenceUpdate(data));
+    };
+    syncService.socket.on("presence-update", handlePresenceUpdate);
+    return () => {
+      syncService.socket.off("presence-update", handlePresenceUpdate);
+    };
+  }, [sessionCode, dispatch]);
 
   // Periodically broadcast host time for drift correction
   useEffect(() => {
