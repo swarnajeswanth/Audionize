@@ -794,8 +794,17 @@ export default function HostPage() {
             type="file"
             accept="audio/*"
             onChange={handleAudioUpload}
-            className="bg-slate-700/50 border border-slate-600 rounded px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="bg-slate-700/50 border border-slate-600 rounded px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!syncConnected}
+            title={
+              !syncConnected ? "Connect to the sync server to upload audio" : ""
+            }
           />
+          {!syncConnected && (
+            <div className="text-xs text-red-400 mt-2">
+              You must be connected to the sync server to upload audio.
+            </div>
+          )}
         </div>
 
         {/* Play Delay Control */}

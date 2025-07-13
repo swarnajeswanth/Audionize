@@ -42,6 +42,11 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
   const [lastSyncTime, setLastSyncTime] = useState(0);
   const syncIntervalRef = useRef(null);
 
+  // Add state for buffering
+  const [bufferedPercent, setBufferedPercent] = useState(0);
+  const [minBufferPercent, setMinBufferPercent] = useState(30); // Start with 30%
+  const [waitingForBuffer, setWaitingForBuffer] = useState(false);
+
   // Expose imperative methods to parent
   useImperativeHandle(ref, () => ({
     play: () => audioRef.current && audioRef.current.play(),
@@ -60,6 +65,35 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
     getDriftCorrection: () => driftCorrection,
     setDriftCorrection: (correction) => setDriftCorrection(correction),
   }));
+
+  // Update buffered percent on progress
+  useEffect(() => {
+    if (!audioRef.current) return;
+    const audio = audioRef.current;
+    const updateBuffer = () => {
+      if (!audio.duration || isNaN(audio.duration)) {
+        setBufferedPercent(0);
+        return;
+      }
+      let buffered = 0;
+      for (let i = 0; i < audio.buffered.length; i++) {
+        if (
+          audio.buffered.start(i) <= audio.currentTime &&
+          audio.currentTime <= audio.buffered.end(i)
+        ) {
+          buffered = audio.buffered.end(i);
+          break;
+        }
+      }
+      setBufferedPercent(Math.floor((buffered / audio.duration) * 100));
+    };
+    audio.addEventListener("progress", updateBuffer);
+    audio.addEventListener("timeupdate", updateBuffer);
+    return () => {
+      audio.removeEventListener("progress", updateBuffer);
+      audio.removeEventListener("timeupdate", updateBuffer);
+    };
+  }, [audioUrl]);
 
   // Handle time update with drift correction
   const handleTimeUpdate = () => {
@@ -80,6 +114,18 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
     }
   };
 
+  // Only enable play if bufferedPercent >= minBufferPercent (for clients)
+  const canPlay = isHost || bufferedPercent >= minBufferPercent;
+
+  // Show/hide waiting spinner if buffering is insufficient
+  useEffect(() => {
+    if (!isHost && !canPlay) {
+      setWaitingForBuffer(true);
+    } else {
+      setWaitingForBuffer(false);
+    }
+  }, [canPlay, isHost]);
+
   // Handle play/pause
   const handlePlayPause = () => {
     if (!audioRef.current || disabled || !isHost) return;
@@ -95,15 +141,19 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
     }
   };
 
-  // Handle seek
+  // If client seeks near buffer edge, increase minBufferPercent
   const handleSeek = (e) => {
-    if (!audioRef.current || disabled || !isHost) return;
-
+    if (!audioRef.current || disabled || isHost) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const width = rect.width;
     const seekTime = (clickX / width) * duration;
-
+    const bufferEdge = (bufferedPercent / 100) * duration;
+    // If seeking within 10% of buffer edge, increase buffer threshold
+    if (seekTime > bufferEdge - duration * 0.1) {
+      setMinBufferPercent(Math.min(80, minBufferPercent + 20));
+      setWaitingForBuffer(true);
+    }
     audioRef.current.currentTime = seekTime;
     dispatch(setCurrentTime(seekTime));
     if (onSeek) onSeek(seekTime);
@@ -162,9 +212,9 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
         {/* Play/Pause Button */}
         <button
           onClick={handlePlayPause}
-          disabled={disabled || !audioUrl || !isHost}
+          disabled={disabled || !audioUrl || (!isHost && !canPlay)}
           className={`relative group ${
-            disabled || !audioUrl || !isHost
+            disabled || !audioUrl || (!isHost && !canPlay)
               ? "opacity-50 cursor-not-allowed"
               : "hover:scale-105 transition-transform"
           }`}
@@ -340,6 +390,15 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
           {audioUrl ? (isPlaying ? "Playing" : "Paused") : "No Audio"}
         </div>
       </div>
+      {/* Show buffering spinner/message for clients if not enough buffered */}
+      {!isHost && waitingForBuffer && (
+        <div className="flex items-center justify-center mt-2">
+          <div className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mr-2"></div>
+          <span className="text-blue-300 text-xs">
+            Buffering... {bufferedPercent}%
+          </span>
+        </div>
+      )}
     </div>
   );
 });
