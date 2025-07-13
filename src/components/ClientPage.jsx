@@ -26,6 +26,7 @@ import NameInputModal from "./NameInputModal";
 import LoadingState from "./LoadingState";
 import BlueDots from "./BlueDots";
 import toast from "react-hot-toast";
+import { useApi } from "../hooks/useApi";
 
 export default function ClientPage() {
   const dispatch = useAppDispatch();
@@ -52,6 +53,8 @@ export default function ClientPage() {
   const reconnectTimeoutRef = useRef(null);
   const pageVisibilityRef = useRef(null);
   const pendingSyncCommands = useRef([]);
+
+  const { getSessionStatus } = useApi();
 
   // Get session code from URL
   const urlCode = searchParams.get("code");
@@ -391,7 +394,19 @@ export default function ClientPage() {
       const syncService = require("../services/syncService").default;
       if (syncService.socket) {
         syncService.socket.clientReadySent = false;
+        console.log("[CLIENT] Reset clientReadySent flag for new audio");
       }
+      setReadinessWarning(false);
+      if (readinessTimeout) clearTimeout(readinessTimeout);
+      // Start 1-minute timeout to check readiness
+      const timeout = setTimeout(() => {
+        if (!syncService.socket?.clientReadySent) {
+          setReadinessWarning(true);
+          // Retry emitting client-ready
+          emitClientReady();
+        }
+      }, 60000);
+      setReadinessTimeout(timeout);
 
       // Handle audio buffer data
       if (data.audioBuffer) {
@@ -690,41 +705,81 @@ export default function ClientPage() {
     };
   }, [sessionCode, userName]);
 
+  const [waitingForHost, setWaitingForHost] = useState(false);
+  const [waitCountdown, setWaitCountdown] = useState(120); // 2 minutes
+  const waitIntervalRef = useRef(null);
+
+  // Wait for host polling logic
+  useEffect(() => {
+    if (!waitingForHost || !sessionCode) return;
+    let isMounted = true;
+    setWaitCountdown(120);
+    waitIntervalRef.current = setInterval(async () => {
+      setWaitCountdown((prev) => prev - 3);
+      try {
+        // Poll the server for session status
+        const status = await getSessionStatus(sessionCode);
+        if (status?.data?.host) {
+          // Host is back!
+          if (isMounted) {
+            setWaitingForHost(false);
+            setHostDisconnected(false);
+            setIsConnecting(true);
+            toast.success("Host has returned! Reconnecting...");
+            // The useSyncService hook will handle reconnection
+          }
+        }
+      } catch (err) {
+        // Ignore errors, keep polling
+      }
+    }, 3000);
+    // Timeout after 2 minutes
+    const timeout = setTimeout(() => {
+      setWaitingForHost(false);
+      setHostDisconnected(false);
+      toast.error("Host did not return. Redirecting to home page.");
+      window.location.href = "/";
+    }, 120000);
+    return () => {
+      isMounted = false;
+      clearInterval(waitIntervalRef.current);
+      clearTimeout(timeout);
+    };
+  }, [waitingForHost, sessionCode, getSessionStatus]);
+
+  // Patch host disconnect/session-not-found handlers to use wait mode
   useEffect(() => {
     const syncService = require("../services/syncService").default;
     if (!syncService.socket) return;
-
     const handleHostDisconnect = (data) => {
-      toast.error(data.message || "Host disconnected. Session ended.");
+      setWaitingForHost(true);
+      setHostDisconnected(true);
       dispatch(clearSync());
       dispatch(clearSession());
-      setTimeout(() => {
-        window.location.href = "/";
-      }, 2000);
+      toast.error(
+        data.message || "Host disconnected. Waiting for host to return..."
+      );
     };
-
     const handleSessionNotFound = (data) => {
-      toast.error(data.message || "Session not found or host not active.");
+      setWaitingForHost(true);
+      setHostDisconnected(true);
       dispatch(clearSync());
       dispatch(clearSession());
-      setTimeout(() => {
-        window.location.href = "/";
-      }, 2000);
+      toast.error(
+        data.message ||
+          "Session not found or host not active. Waiting for host..."
+      );
     };
-
     const handleSocketDisconnect = () => {
-      toast.error("Disconnected from sync server.");
+      setWaitingForHost(true);
+      setHostDisconnected(true);
       dispatch(clearSync());
       dispatch(clearSession());
-      setTimeout(() => {
-        window.location.href = "/";
-      }, 2000);
+      toast.error("Disconnected from sync server. Waiting for host...");
     };
-
     syncService.socket.on("host_disconnect", handleHostDisconnect);
     syncService.socket.on("session-not-found", handleSessionNotFound);
     syncService.socket.on("disconnect", handleSocketDisconnect);
-
     return () => {
       if (syncService.socket) {
         syncService.socket.off("host_disconnect", handleHostDisconnect);
@@ -733,6 +788,22 @@ export default function ClientPage() {
       }
     };
   }, [dispatch]);
+
+  // Add state for readiness timeout and warning
+  const [readinessTimeout, setReadinessTimeout] = useState(null);
+  const [readinessWarning, setReadinessWarning] = useState(false);
+
+  // Helper to emit client-ready robustly
+  const emitClientReady = () => {
+    if (!syncService.socket?.clientReadySent) {
+      syncService.emit("client-ready", {
+        name: userName,
+        id: syncService.socket.id,
+      });
+      syncService.socket.clientReadySent = true;
+      console.log("[CLIENT] Emitted client-ready (manual/timeout)");
+    }
+  };
 
   // Show loading if no session code
   if (!sessionCode) {
@@ -782,6 +853,33 @@ export default function ClientPage() {
           loadingText="Reconnecting..."
           size="large"
         />
+      </div>
+    );
+  }
+
+  // Show waiting for host UI
+  if (waitingForHost) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        <LoadingState
+          isLoading={true}
+          loadingText={`Waiting for host to return... (${waitCountdown}s)`}
+          size="large"
+        />
+        <div className="mt-6 text-center">
+          <p className="text-slate-300 mb-2">
+            The host has disconnected. We are waiting for them to return.
+            <br />
+            If the host rejoins within 2 minutes, you will be reconnected
+            automatically.
+          </p>
+          <button
+            onClick={handleDisconnect}
+            className="mt-4 bg-red-500 hover:bg-red-600 px-6 py-3 rounded text-white font-semibold"
+          >
+            Leave Session
+          </button>
+        </div>
       </div>
     );
   }
@@ -887,6 +985,11 @@ export default function ClientPage() {
         </div>
 
         {/* Modern Audio Player */}
+        {readinessWarning && (
+          <div className="text-red-400 text-sm mb-4 text-center">
+            Audio failed to load or sync within 1 minute. Please check your connection or try rejoining.
+          </div>
+        )}
         {audioUrl && !hostDisconnected ? (
           <div className="mb-8">
             {/* Drift Correction Status */}
