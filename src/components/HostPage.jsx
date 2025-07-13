@@ -206,7 +206,7 @@ export default function HostPage() {
     };
 
     const handleAllClientsReady = (data) => {
-      console.log("All clients ready:", data);
+      console.log("[HOST] Received all-clients-ready event:", data);
       setAllClientsReady(true);
       setReadyClients(data.readyClients);
       toast.success("All clients are ready to play!");
@@ -220,6 +220,13 @@ export default function HostPage() {
       syncService.socket.off("all-clients-ready", handleAllClientsReady);
     };
   }, [sessionCode, dispatch]);
+
+  // Add logging to readiness UI
+  useEffect(() => {
+    console.log(
+      `[HOST] UI readiness: allClientsReady=${allClientsReady}, readyClients=${readyClients.length}, connectedClients=${connectedClients.length}`
+    );
+  }, [allClientsReady, readyClients, connectedClients.length]);
 
   // Periodically broadcast host time for drift correction
   useEffect(() => {

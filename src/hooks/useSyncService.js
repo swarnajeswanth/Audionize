@@ -179,10 +179,10 @@ export const useSyncService = (
         // Show notification
         toast.error("Host has disconnected. Session ended.");
 
-        // Redirect to home page after a short delay
-        setTimeout(() => {
-          window.location.href = "/";
-        }, 2000);
+        // (Removed automatic redirect to home page so logs can be reviewed)
+        // setTimeout(() => {
+        //   window.location.href = "/";
+        // }, 2000);
       };
 
       syncService.socket.on("host_disconnect", handler);

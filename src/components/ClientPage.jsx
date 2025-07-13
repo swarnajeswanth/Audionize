@@ -381,7 +381,7 @@ export default function ClientPage() {
 
   // Handle audio sync from server
   const handleAudioSync = (data) => {
-    console.log("Received audio sync:", data);
+    console.log("[CLIENT] Received audio sync event:", data);
     try {
       // Handle audio buffer data
       if (data.audioBuffer) {
@@ -390,17 +390,21 @@ export default function ClientPage() {
         });
         setAudioBlob(audioBlob);
         const url = URL.createObjectURL(audioBlob);
+        console.log("[CLIENT] Created audio URL from buffer:", url);
         dispatch(setAudioUrl(url));
         dispatch(setAudioFile(audioBlob));
         toast.success("New audio received from host");
       }
       // Handle audio URL data
       else if (data.audioUrl) {
+        console.log("[CLIENT] Received audioUrl:", data.audioUrl);
         dispatch(setAudioUrl(data.audioUrl));
         toast.success("New audio received from host");
+      } else {
+        console.warn("[CLIENT] No audioBuffer or audioUrl in audio sync data");
       }
     } catch (error) {
-      console.error("Error processing audio sync:", error);
+      console.error("[CLIENT] Error processing audio sync:", error);
       toast.error("Failed to load audio from host");
     }
   };
@@ -480,6 +484,7 @@ export default function ClientPage() {
 
   // Notify server when audio is ready
   const handleLoadedMetadata = () => {
+    console.log("[CLIENT] onLoadedMetadata fired");
     if (audioElementRef.current?.audio && sessionCode && userName) {
       // Notify server that this client is ready
       const syncService = require("../services/syncService").default;
@@ -488,13 +493,14 @@ export default function ClientPage() {
           sessionCode,
           clientId: syncService.socket.id,
         });
-        console.log("Notified server: client ready to play");
+        console.log("[CLIENT] Notified server: client ready to play");
       }
     }
   };
 
   // Notify server when audio becomes unavailable
   const handleAudioError = () => {
+    console.log("[CLIENT] Audio error or unavailable");
     if (sessionCode && userName) {
       const syncService = require("../services/syncService").default;
       if (syncService.socket) {
@@ -502,7 +508,7 @@ export default function ClientPage() {
           sessionCode,
           clientId: syncService.socket.id,
         });
-        console.log("Notified server: client not ready");
+        console.log("[CLIENT] Notified server: client not ready");
       }
     }
   };
