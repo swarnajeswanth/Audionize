@@ -690,6 +690,50 @@ export default function ClientPage() {
     };
   }, [sessionCode, userName]);
 
+  useEffect(() => {
+    const syncService = require("../services/syncService").default;
+    if (!syncService.socket) return;
+
+    const handleHostDisconnect = (data) => {
+      toast.error(data.message || "Host disconnected. Session ended.");
+      dispatch(clearSync());
+      dispatch(clearSession());
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 2000);
+    };
+
+    const handleSessionNotFound = (data) => {
+      toast.error(data.message || "Session not found or host not active.");
+      dispatch(clearSync());
+      dispatch(clearSession());
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 2000);
+    };
+
+    const handleSocketDisconnect = () => {
+      toast.error("Disconnected from sync server.");
+      dispatch(clearSync());
+      dispatch(clearSession());
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 2000);
+    };
+
+    syncService.socket.on("host_disconnect", handleHostDisconnect);
+    syncService.socket.on("session-not-found", handleSessionNotFound);
+    syncService.socket.on("disconnect", handleSocketDisconnect);
+
+    return () => {
+      if (syncService.socket) {
+        syncService.socket.off("host_disconnect", handleHostDisconnect);
+        syncService.socket.off("session-not-found", handleSessionNotFound);
+        syncService.socket.off("disconnect", handleSocketDisconnect);
+      }
+    };
+  }, [dispatch]);
+
   // Show loading if no session code
   if (!sessionCode) {
     return (

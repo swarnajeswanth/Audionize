@@ -92,6 +92,20 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // Prevent clients from joining non-existent or hostless sessions
+    if (role === "client") {
+      if (!sessions[session] || !sessions[session].host) {
+        socket.emit("session-not-found", {
+          message:
+            "Session not found or host is not active. Please check the code or ask the host to start a new session.",
+        });
+        console.log(
+          `[JOIN-ERROR] Client (${name}) attempted to join non-existent or hostless session ${session}`
+        );
+        return;
+      }
+    }
+
     socket.session = session;
     socket.role = role;
     socket.name = name;
@@ -380,11 +394,21 @@ io.on("connection", (socket) => {
           `[HOST-LEFT] Host (${socket.name}) left session ${socket.session}`
         );
 
-        // Notify all clients in the session
+        // Notify all clients in the session and disconnect them
         io.to(socket.session).emit("host_disconnect", {
           message: "Host has disconnected. Session ended.",
         });
+
+        // Disconnect all clients
+        sessions[socket.session].clients.forEach((client) => {
+          if (client.socket) client.socket.disconnect(true);
+        });
+
+        // Remove host and clients, then delete session
         sessions[socket.session].host = null;
+        sessions[socket.session].clients = [];
+        delete sessions[socket.session];
+        return; // End further processing
       }
 
       // Update presence for remaining clients
