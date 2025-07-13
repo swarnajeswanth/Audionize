@@ -108,7 +108,7 @@ io.on("connection", (socket) => {
       console.log(`[SESSION-CREATED] New session ${session} created`);
     }
 
-    // Remove any existing connection for this socket ID
+    // If host joins, set host in the existing session (do NOT overwrite session object)
     if (role === "host") {
       // If there's already a host, disconnect them
       if (sessions[session].host && sessions[session].host.id !== socket.id) {
@@ -127,9 +127,9 @@ io.on("connection", (socket) => {
         socket.emit("audio_sync", sessions[session].audio);
       }
     } else {
-      // Remove any existing client with same ID
+      // Remove any existing client with same ID or name
       sessions[session].clients = sessions[session].clients.filter(
-        (c) => c.id !== socket.id
+        (c) => c.id !== socket.id && c.name !== name
       );
 
       // Add new client
