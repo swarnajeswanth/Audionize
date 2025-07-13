@@ -22,6 +22,8 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
     onVolumeChange,
     isHost = false,
     disabled = false,
+    onLoadedMetadata,
+    onError,
   },
   ref
 ) {
@@ -135,10 +137,16 @@ const ModernAudioPlayer = forwardRef(function ModernAudioPlayer(
         ref={audioRef}
         src={audioUrl}
         onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
+        onLoadedMetadata={(e) => {
+          handleLoadedMetadata(e);
+          if (onLoadedMetadata) onLoadedMetadata(e);
+        }}
         onPlay={() => dispatch(setIsPlaying(true))}
         onPause={() => dispatch(setIsPlaying(false))}
-        onError={(e) => console.error("Audio error:", e)}
+        onError={(e) => {
+          console.error("Audio error:", e);
+          if (onError) onError(e);
+        }}
         preload="metadata"
         // Enhanced audio settings for better sync
         crossOrigin="anonymous"
