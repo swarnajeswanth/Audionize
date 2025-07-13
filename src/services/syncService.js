@@ -458,7 +458,9 @@ class SyncService {
 
     this.pingInterval = setInterval(() => {
       if (this.socket && this.isConnected) {
-        this.socket.emit("ping", { sentTime: Date.now() });
+        const sentTime = Date.now();
+        this.socket.emit("ping", { sentTime });
+        console.log(`[SYNC SERVICE] Sent ping at ${sentTime}`);
       }
     }, 5000); // Ping every 5 seconds
   }
@@ -593,6 +595,29 @@ class SyncService {
         });
       }
     });
+  }
+
+  // Add or update this method to allow host to disconnect a specific client
+  disconnectClient(clientId) {
+    this.queueOperation(() => {
+      if (this.socket && this.isConnected) {
+        this.socket.emit("disconnect-client", { clientId });
+      }
+    });
+  }
+
+  // Enhanced audio event handling
+  onAudioSync(handler) {
+    if (this.socket) {
+      this.socket.on("audio_sync", (data) => {
+        console.log("[SYNC SERVICE] Received audio_sync:", data);
+        handler(data);
+      });
+      this.socket.on("audio-uploaded", (data) => {
+        console.log("[SYNC SERVICE] Received audio-uploaded:", data);
+        handler(data);
+      });
+    }
   }
 
   // Set callbacks

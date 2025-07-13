@@ -425,8 +425,9 @@ export default function HostPage() {
   };
 
   const handleDisconnectClient = (clientId) => {
-    // Implementation for disconnecting specific client
-    toast.success("Client disconnect functionality coming soon");
+    const syncService = require("../services/syncService").default;
+    syncService.disconnectClient(clientId);
+    toast.success("Client disconnect requested");
   };
 
   // Enhanced sync all clients to current position

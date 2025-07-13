@@ -611,21 +611,37 @@ export default function ClientPage() {
     }
   }, [sessionCode]);
 
-  // Add effect to emit client-ready when audio is loaded
+  // Enhanced audio event handling and client-ready emission
   useEffect(() => {
-    if (audioUrl && syncConnected && !isClientReady) {
-      // Emit client-ready event to server
-      const syncService = require("../services/syncService").default;
-      if (syncService.socket) {
-        syncService.socket.emit("client-ready", {
-          sessionCode: sessionCode,
-          timestamp: Date.now(),
-        });
-        setIsClientReady(true);
-        console.log("Client ready event emitted");
-      }
+    const syncService = require("../services/syncService").default;
+    if (syncService && syncService.onAudioSync) {
+      syncService.onAudioSync((data) => {
+        // Handle audio buffer data
+        if (data.audioBuffer) {
+          const audioBlob = new Blob([new Uint8Array(data.audioBuffer)], {
+            type: data.fileType || "audio/mpeg",
+          });
+          setAudioBlob(audioBlob);
+          const url = URL.createObjectURL(audioBlob);
+          dispatch(setAudioUrl(url));
+          dispatch(setAudioFile(audioBlob));
+          toast.success("New audio received from host");
+        } else if (data.audioUrl) {
+          dispatch(setAudioUrl(data.audioUrl));
+          toast.success("New audio received from host");
+        }
+        // Emit client-ready after audio is set
+        if (syncService.socket) {
+          syncService.socket.emit("client-ready", {
+            sessionCode: sessionCode,
+            timestamp: Date.now(),
+          });
+          setIsClientReady(true);
+          console.log("Client ready event emitted (from audio event)");
+        }
+      });
     }
-  }, [audioUrl, syncConnected, isClientReady, sessionCode]);
+  }, [dispatch, sessionCode]);
 
   // Reset client ready state when audio changes
   useEffect(() => {
