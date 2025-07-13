@@ -229,14 +229,18 @@ export default function HostPage() {
       // Reset ready state when new client joins
       setAllClientsReady(false);
       setWaitingForClients(true);
-      toast.info("New client joined - waiting for all clients to be ready...");
+      toast.success(
+        "New client joined - waiting for all clients to be ready..."
+      );
     };
 
     const handleClientLeft = (data) => {
       // Reset ready state when client leaves
       setAllClientsReady(false);
       setWaitingForClients(true);
-      toast.info("Client left - waiting for remaining clients to be ready...");
+      toast.success(
+        "Client left - waiting for remaining clients to be ready..."
+      );
     };
 
     syncService.socket.on("all-clients-ready", handleAllClientsReady);
@@ -417,12 +421,12 @@ export default function HostPage() {
   // Client management
   const handleMuteClient = (clientId) => {
     // Implementation for muting specific client
-    toast.info("Client mute functionality coming soon");
+    toast.success("Client mute functionality coming soon");
   };
 
   const handleDisconnectClient = (clientId) => {
     // Implementation for disconnecting specific client
-    toast.info("Client disconnect functionality coming soon");
+    toast.success("Client disconnect functionality coming soon");
   };
 
   // Enhanced sync all clients to current position
