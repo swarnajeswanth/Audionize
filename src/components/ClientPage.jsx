@@ -28,6 +28,8 @@ import BlueDots from "./BlueDots";
 import toast from "react-hot-toast";
 
 export default function ClientPage() {
+  // 1. All hooks go here, before any return or conditional return
+  // (useState, useRef, useEffect, useCallback, etc.)
   const dispatch = useAppDispatch();
   const searchParams = useSearchParams();
   const { sessionCode } = useAppSelector((state) => state.session);
@@ -243,19 +245,135 @@ export default function ClientPage() {
     };
   }, [sessionCode, hostDisconnected, isPageActive]);
 
-  // Enhanced sync handler with precise timing and drift correction
+  // Move startDriftCorrection and stopDriftCorrection above all handler functions
+  const startDriftCorrection = useCallback(() => {
+    if (syncInterval) {
+      clearInterval(syncInterval);
+    }
+
+    const interval = setInterval(() => {
+      if (
+        audioElementRef.current?.audio &&
+        !audioElementRef.current.audio.paused
+      ) {
+        // Request time update from host
+        if (sendTimeUpdate) {
+          sendTimeUpdate();
+        }
+      }
+    }, 2000); // Check every 2 seconds
+
+    setSyncInterval(interval);
+  }, [syncInterval, sendTimeUpdate]);
+
+  // Stop drift correction interval
+  const stopDriftCorrection = useCallback(() => {
+    if (syncInterval) {
+      clearInterval(syncInterval);
+      setSyncInterval(null);
+    }
+  }, [syncInterval]);
+
+  // Now define all handler functions (handlePlaySync, handlePauseSync, etc.) below these
+  const handlePlaySync = useCallback(
+    (data, now, audio) => {
+      const { scheduledTime, currentTime, networkLatency } = data;
+      setDriftCorrection(0);
+      setLastHostTime(currentTime);
+      setLastHostTimestamp(now);
+      const estimatedLatency = networkLatency || 0;
+      const timeUntilPlay = scheduledTime - now - estimatedLatency;
+      if (timeUntilPlay > 0) {
+        setTimeout(() => {
+          audio.currentTime = currentTime;
+          audio.play().catch((error) => {
+            console.error("Error playing audio:", error);
+          });
+          dispatch(setIsPlaying(true));
+          dispatch(setCurrentTime(currentTime));
+          startDriftCorrection();
+        }, timeUntilPlay);
+      } else {
+        audio.currentTime = currentTime;
+        audio.play().catch((error) => {
+          console.error("Error playing audio:", error);
+        });
+        dispatch(setIsPlaying(true));
+        dispatch(setCurrentTime(currentTime));
+        startDriftCorrection();
+      }
+    },
+    [dispatch, startDriftCorrection]
+  );
+  const handlePauseSync = useCallback(
+    (data, now, audio) => {
+      const { currentTime } = data;
+      stopDriftCorrection();
+      audio.pause();
+      audio.currentTime = currentTime;
+      dispatch(setIsPlaying(false));
+      dispatch(setCurrentTime(currentTime));
+    },
+    [dispatch, stopDriftCorrection]
+  );
+  const handleSeekSync = useCallback(
+    (data, now, audio) => {
+      const { currentTime } = data;
+      audio.currentTime = currentTime;
+      dispatch(setCurrentTime(currentTime));
+    },
+    [dispatch]
+  );
+  const handleVolumeSync = useCallback((data, audio) => {
+    const { volume } = data;
+    audio.volume = volume;
+  }, []);
+  const handleSyncAll = useCallback(
+    (data, now, audio) => {
+      const { currentTime } = data;
+      if (audio.paused) {
+        audio.currentTime = currentTime;
+        dispatch(setCurrentTime(currentTime));
+      } else {
+        const syncDelay = 100;
+        setTimeout(() => {
+          audio.currentTime = currentTime;
+          dispatch(setCurrentTime(currentTime));
+        }, syncDelay);
+      }
+    },
+    [dispatch]
+  );
+  const handleTimeUpdateSync = useCallback(
+    (data, now, audio) => {
+      const { currentTime, timestamp } = data;
+      if (!audio || audio.paused) return;
+      const timeElapsed = (now - lastHostTimestamp) / 1000;
+      const expectedTime = lastHostTime + timeElapsed;
+      const actualTime = audio.currentTime;
+      const drift = actualTime - expectedTime;
+      setLastHostTime(currentTime);
+      setLastHostTimestamp(now);
+      if (Math.abs(drift) > 0.05) {
+        const newCorrection = driftCorrection + drift;
+        setDriftCorrection(newCorrection);
+        audio.currentTime = expectedTime;
+        dispatch(setCurrentTime(expectedTime));
+      }
+    },
+    [lastHostTimestamp, lastHostTime, driftCorrection, dispatch]
+  );
+
+  // Now define handleSync after all the above
   const handleSync = useCallback(
     (data) => {
       console.log("Received sync command:", data);
-
       if (!audioElementRef.current?.audio) {
         console.warn("Audio element not ready for sync");
         return;
       }
-
       const audio = audioElementRef.current.audio;
       const now = Date.now();
-
       switch (data.type) {
         case "play":
           handlePlaySync(data, now, audio);
@@ -288,198 +406,6 @@ export default function ClientPage() {
       handleTimeUpdateSync,
     ]
   );
-
-  // Precise play synchronization with drift correction
-  const handlePlaySync = useCallback(
-    (data, now, audio) => {
-      const { scheduledTime, currentTime, networkLatency } = data;
-
-      // Reset drift correction on new play command
-      setDriftCorrection(0);
-      setLastHostTime(currentTime);
-      setLastHostTimestamp(now);
-
-      // Compensate for estimated one-way latency (default to 0 if not provided)
-      const estimatedLatency = networkLatency || 0;
-      const timeUntilPlay = scheduledTime - now - estimatedLatency;
-
-      if (timeUntilPlay > 0) {
-        // Schedule play for future time
-        console.log(
-          `Scheduling play in ${timeUntilPlay}ms (latency compensated)`
-        );
-        setTimeout(() => {
-          audio.currentTime = currentTime;
-          audio.play().catch((error) => {
-            console.error("Error playing audio:", error);
-          });
-          dispatch(setIsPlaying(true));
-          dispatch(setCurrentTime(currentTime));
-
-          // Start drift correction after play starts
-          startDriftCorrection();
-        }, timeUntilPlay);
-      } else {
-        // Play immediately if scheduled time has passed
-        console.log(
-          "Scheduled time passed, playing immediately (latency compensated)"
-        );
-        audio.currentTime = currentTime;
-        audio.play().catch((error) => {
-          console.error("Error playing audio:", error);
-        });
-        dispatch(setIsPlaying(true));
-        dispatch(setCurrentTime(currentTime));
-
-        // Start drift correction after play starts
-        startDriftCorrection();
-      }
-    },
-    [dispatch, startDriftCorrection]
-  );
-
-  // Precise pause synchronization
-  const handlePauseSync = useCallback(
-    (data, now, audio) => {
-      const { currentTime } = data;
-
-      // Stop drift correction on pause
-      stopDriftCorrection();
-
-      audio.pause();
-      audio.currentTime = currentTime;
-      dispatch(setIsPlaying(false));
-      dispatch(setCurrentTime(currentTime));
-    },
-    [dispatch, stopDriftCorrection]
-  );
-
-  // Precise seek synchronization
-  const handleSeekSync = useCallback(
-    (data, now, audio) => {
-      const { currentTime } = data;
-
-      audio.currentTime = currentTime;
-      dispatch(setCurrentTime(currentTime));
-    },
-    [dispatch]
-  );
-
-  // Volume synchronization
-  const handleVolumeSync = useCallback((data, audio) => {
-    const { volume } = data;
-    audio.volume = volume;
-  }, []);
-
-  // Sync all clients to current position
-  const handleSyncAll = useCallback(
-    (data, now, audio) => {
-      const { currentTime } = data;
-
-      if (audio.paused) {
-        audio.currentTime = currentTime;
-        dispatch(setCurrentTime(currentTime));
-      } else {
-        // If playing, schedule a precise sync
-        const syncDelay = 100; // Small delay for sync
-        setTimeout(() => {
-          audio.currentTime = currentTime;
-          dispatch(setCurrentTime(currentTime));
-        }, syncDelay);
-      }
-    },
-    [dispatch]
-  );
-
-  // Handle audio sync from server
-  const handleAudioSync = useCallback(
-    (data) => {
-      console.log("Received audio sync:", data);
-      try {
-        // Handle audio buffer data
-        if (data.audioBuffer) {
-          const audioBlob = new Blob([new Uint8Array(data.audioBuffer)], {
-            type: data.fileType || "audio/mpeg",
-          });
-          setAudioBlob(audioBlob);
-          const url = URL.createObjectURL(audioBlob);
-          dispatch(setAudioUrl(url));
-          dispatch(setAudioFile(audioBlob));
-          toast.success("New audio received from host");
-        }
-        // Handle audio URL data
-        else if (data.audioUrl) {
-          dispatch(setAudioUrl(data.audioUrl));
-          toast.success("New audio received from host");
-        }
-      } catch (error) {
-        console.error("Error processing audio sync:", error);
-        toast.error("Failed to load audio from host");
-      }
-    },
-    [dispatch]
-  );
-
-  // Handle time updates from host for drift correction
-  const handleTimeUpdateSync = useCallback(
-    (data, now, audio) => {
-      const { currentTime, timestamp } = data;
-
-      if (!audio || audio.paused) return;
-
-      // Calculate expected time based on host's time and elapsed time
-      const timeElapsed = (now - lastHostTimestamp) / 1000;
-      const expectedTime = lastHostTime + timeElapsed;
-      const actualTime = audio.currentTime;
-      const drift = actualTime - expectedTime;
-
-      // Update host time reference
-      setLastHostTime(currentTime);
-      setLastHostTimestamp(now);
-
-      // Apply drift correction if significant
-      if (Math.abs(drift) > 0.05) {
-        // 50ms threshold
-        console.log(`Drift detected: ${drift.toFixed(3)}s, correcting...`);
-        const newCorrection = driftCorrection + drift;
-        setDriftCorrection(newCorrection);
-
-        // Apply correction to audio
-        audio.currentTime = expectedTime;
-        dispatch(setCurrentTime(expectedTime));
-      }
-    },
-    [lastHostTimestamp, lastHostTime, driftCorrection, dispatch]
-  );
-
-  // Start drift correction interval
-  const startDriftCorrection = useCallback(() => {
-    if (syncInterval) {
-      clearInterval(syncInterval);
-    }
-
-    const interval = setInterval(() => {
-      if (
-        audioElementRef.current?.audio &&
-        !audioElementRef.current.audio.paused
-      ) {
-        // Request time update from host
-        if (sendTimeUpdate) {
-          sendTimeUpdate();
-        }
-      }
-    }, 2000); // Check every 2 seconds
-
-    setSyncInterval(interval);
-  }, [syncInterval, sendTimeUpdate]);
-
-  // Stop drift correction interval
-  const stopDriftCorrection = useCallback(() => {
-    if (syncInterval) {
-      clearInterval(syncInterval);
-      setSyncInterval(null);
-    }
-  }, [syncInterval]);
 
   // Handle time updates to send to host
   const handleTimeUpdate = () => {
@@ -589,7 +515,36 @@ export default function ClientPage() {
     }
   }, [setMessageHandler, sessionCode, userName, handleSync]);
 
-  // Set up audio update handler only when we have all required data
+  // Ensure handleAudioSync is defined first
+  const handleAudioSync = useCallback(
+    (data) => {
+      console.log("Received audio sync:", data);
+      try {
+        // Handle audio buffer data
+        if (data.audioBuffer) {
+          const audioBlob = new Blob([new Uint8Array(data.audioBuffer)], {
+            type: data.fileType || "audio/mpeg",
+          });
+          setAudioBlob(audioBlob);
+          const url = URL.createObjectURL(audioBlob);
+          dispatch(setAudioUrl(url));
+          dispatch(setAudioFile(audioBlob));
+          toast.success("New audio received from host");
+        }
+        // Handle audio URL data
+        else if (data.audioUrl) {
+          dispatch(setAudioUrl(data.audioUrl));
+          toast.success("New audio received from host");
+        }
+      } catch (error) {
+        console.error("Error processing audio sync:", error);
+        toast.error("Failed to load audio from host");
+      }
+    },
+    [dispatch]
+  );
+
+  // Now move the useEffect that uses handleAudioSync below this
   useEffect(() => {
     if (setAudioUpdateHandler && sessionCode && userName) {
       setAudioUpdateHandler(handleAudioSync);
@@ -620,7 +575,7 @@ export default function ClientPage() {
     }
   }, [sessionCode]);
 
-  // Show loading if no session code
+  // 2. All conditional returns go here, after all hooks
   if (!sessionCode) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -632,8 +587,6 @@ export default function ClientPage() {
       </div>
     );
   }
-
-  // Show name input if no username or if name input modal is active
   if (!userName && showNameInput) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -646,8 +599,6 @@ export default function ClientPage() {
       </div>
     );
   }
-
-  // Show connecting state
   if (isConnecting && userName) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -659,27 +610,7 @@ export default function ClientPage() {
       </div>
     );
   }
-
-  // Add this inside the ClientPage component, after refs and hooks
-  useEffect(() => {
-    if (!audioElementRef.current) return;
-    const audio = audioElementRef.current.audio;
-    if (!audio) return;
-    const handleReady = () => {
-      // Emit client-ready event to server
-      if (window && window.navigator && window.navigator.onLine) {
-        const syncService = require("../services/syncService").default;
-        if (syncService.socket) {
-          syncService.socket.emit("client-ready");
-        }
-      }
-    };
-    audio.addEventListener("loadedmetadata", handleReady);
-    return () => {
-      audio.removeEventListener("loadedmetadata", handleReady);
-    };
-  }, [audioUrl]);
-
+  // 3. Main render
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       <BlueDots />
