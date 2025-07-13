@@ -42,8 +42,10 @@ export default function HostPage() {
   const [audioFile, setAudioFileState] = useState(null);
   const [audioUrl, setAudioUrlState] = useState(null);
   const [audioBlob, setAudioBlob] = useState(null);
-  const [playDelay, setPlayDelay] = useState(2000); // 2 seconds default
+  const [playDelay, setPlayDelay] = useState(200); // 200ms for millisecond precision
   const [isPlayScheduled, setIsPlayScheduled] = useState(false);
+  const [allClientsReady, setAllClientsReady] = useState(false);
+  const [readyClients, setReadyClients] = useState([]);
 
   const audioElementRef = useRef(null);
 
@@ -198,12 +200,24 @@ export default function HostPage() {
     // Access the socket from syncService
     const syncService = require("../services/syncService").default;
     if (!syncService.socket) return;
+
     const handlePresenceUpdate = (data) => {
       dispatch(presenceUpdate(data));
     };
+
+    const handleAllClientsReady = (data) => {
+      console.log("All clients ready:", data);
+      setAllClientsReady(true);
+      setReadyClients(data.readyClients);
+      toast.success("All clients are ready to play!");
+    };
+
     syncService.socket.on("presence-update", handlePresenceUpdate);
+    syncService.socket.on("all-clients-ready", handleAllClientsReady);
+
     return () => {
       syncService.socket.off("presence-update", handlePresenceUpdate);
+      syncService.socket.off("all-clients-ready", handleAllClientsReady);
     };
   }, [sessionCode, dispatch]);
 
@@ -291,14 +305,21 @@ export default function HostPage() {
     }
   };
 
-  // Enhanced Audio Player Event Handlers with better timing
+  // Ultra-fast Audio Player Event Handlers with millisecond precision
   const handlePlay = () => {
     if (!syncConnected) {
       toast.error("Not connected to sync server yet. Please wait.");
       return;
     }
 
-    // Use configurable delay for better sync
+    // Check if all clients are ready (if there are any clients)
+    if (connectedClients.length > 0 && !allClientsReady) {
+      toast.error("Waiting for all clients to be ready...");
+      return;
+    }
+
+    // Reduce play delay for faster sync (200ms instead of 2000ms)
+    const playDelay = 200; // 200ms delay for millisecond precision
     const scheduledTime = Date.now() + playDelay;
     sendPlay(scheduledTime, currentTime);
 
@@ -306,18 +327,26 @@ export default function HostPage() {
     setIsPlayScheduled(true);
     toast.success(`Play scheduled in ${playDelay / 1000} seconds`);
 
-    // Schedule host playback to start at the same time as clients
-    setTimeout(() => {
-      if (audioElementRef.current?.audio) {
-        audioElementRef.current.audio.play().catch((error) => {
-          console.error("Error playing audio:", error);
-        });
-        // Update playing state when audio actually starts
-        dispatch(setIsPlaying(true));
-      }
-    }, playDelay);
+    // Schedule host playback to start at the same time as clients with precise timing
+    const targetTime = performance.now() + playDelay;
+    const scheduleHostPlay = () => {
+      const checkTime = () => {
+        const currentTime = performance.now();
+        if (currentTime >= targetTime) {
+          if (audioElementRef.current?.audio) {
+            audioElementRef.current.audio.play().catch((error) => {
+              console.error("Error playing audio:", error);
+            });
+            dispatch(setIsPlaying(true));
+          }
+        } else {
+          requestAnimationFrame(checkTime);
+        }
+      };
+      requestAnimationFrame(checkTime);
+    };
 
-    // Don't update playing state immediately - wait for scheduled play
+    scheduleHostPlay();
 
     // Clear scheduled state after delay
     setTimeout(() => {
@@ -568,6 +597,20 @@ export default function HostPage() {
               <span>Connected Clients:</span>
               <span>{connectedClients.length}</span>
             </div>
+            {connectedClients.length > 0 && (
+              <div className="flex justify-between">
+                <span>Client Readiness:</span>
+                <span
+                  className={`font-medium ${
+                    allClientsReady ? "text-green-400" : "text-yellow-400"
+                  }`}
+                >
+                  {allClientsReady
+                    ? "All Ready"
+                    : `${readyClients.length}/${connectedClients.length} Ready`}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span>Sync Server Status:</span>
               <span

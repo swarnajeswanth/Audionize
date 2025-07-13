@@ -468,131 +468,123 @@ class SyncService {
     return Date.now() + this.clockOffset;
   }
 
-  // Calculate optimal play delay based on network conditions
+  // Optimized play delay calculation for millisecond precision
   calculatePlayDelay() {
-    const baseDelay = 1000; // 1 second base delay
-    const latencyBuffer = this.networkLatency * 2; // Double the latency for safety
-    const jitterBuffer = 200; // Additional buffer for network jitter
+    // Reduce base delay to 200ms for faster response
+    const baseDelay = 200; // 200ms base delay instead of 1000ms
+    const latencyBuffer = this.networkLatency * 1.5; // Reduce latency buffer
+    const jitterBuffer = 50; // Reduce jitter buffer to 50ms
     return Math.max(baseDelay, latencyBuffer + jitterBuffer);
   }
 
   // Send audio file to clients
   sendAudio(audioBuffer, fileName, fileSize, fileType) {
-    this.queueOperation(() => {
-      if (this.socket && this.isConnected) {
-        console.log("Sending audio to clients:", { fileName, fileSize });
-        this.socket.emit("audio_upload", {
-          sessionCode: this.sessionCode,
-          audioBuffer, // ArrayBuffer
-          fileName,
-          fileSize,
-          fileType, // pass the type
-          timestamp: Date.now(),
-        });
-      } else {
-        console.error("Cannot send audio: socket not connected");
-      }
-    });
+    // Send immediately without queuing for faster upload
+    if (this.socket && this.isConnected) {
+      console.log("Sending audio to clients:", { fileName, fileSize });
+      this.socket.emit("audio_upload", {
+        sessionCode: this.sessionCode,
+        audioBuffer, // ArrayBuffer
+        fileName,
+        fileSize,
+        fileType, // pass the type
+        timestamp: Date.now(),
+      });
+    } else {
+      console.error("Cannot send audio: socket not connected");
+    }
   }
 
-  // Enhanced play command with better timing
+  // Ultra-fast play command with minimal delay
   sendPlay(scheduledTime = 0, currentTime = 0) {
-    this.queueOperation(() => {
-      if (this.socket && this.isConnected) {
-        const playDelay = this.calculatePlayDelay();
-        // Use provided scheduledTime if it's greater than 0, otherwise calculate
-        const actualScheduledTime =
-          scheduledTime > 0
-            ? scheduledTime
-            : this.getSyncTimestamp() + playDelay;
+    // Send immediately without queuing for faster sync
+    if (this.socket && this.isConnected) {
+      const playDelay = this.calculatePlayDelay();
+      // Use provided scheduledTime if it's greater than 0, otherwise calculate
+      const actualScheduledTime =
+        scheduledTime > 0 ? scheduledTime : this.getSyncTimestamp() + playDelay;
 
-        console.log("Sending play command:", {
-          scheduledTime: actualScheduledTime,
-          currentTime,
-          playDelay,
-          networkLatency: this.networkLatency,
-          providedScheduledTime: scheduledTime,
-        });
+      console.log("Sending play command:", {
+        scheduledTime: actualScheduledTime,
+        currentTime,
+        playDelay,
+        networkLatency: this.networkLatency,
+        providedScheduledTime: scheduledTime,
+      });
 
-        this.socket.emit("play_command", {
-          sessionCode: this.sessionCode,
-          scheduledTime: actualScheduledTime,
-          currentTime: currentTime,
-          timestamp: this.getSyncTimestamp(),
-          networkLatency: this.networkLatency,
-        });
-      } else {
-        console.error("Cannot send play command: socket not connected");
-      }
-    });
+      this.socket.emit("play_command", {
+        sessionCode: this.sessionCode,
+        scheduledTime: actualScheduledTime,
+        currentTime: currentTime,
+        timestamp: this.getSyncTimestamp(),
+        networkLatency: this.networkLatency,
+      });
+    } else {
+      console.error("Cannot send play command: socket not connected");
+    }
   }
 
-  // Send pause command to clients (with currentTime for sync)
+  // Fast pause command
   sendPause(currentTime = 0) {
-    this.queueOperation(() => {
-      if (this.socket && this.isConnected) {
-        console.log("Sending pause command:", { currentTime });
-        this.socket.emit("pause_command", {
-          sessionCode: this.sessionCode,
-          currentTime: currentTime,
-          timestamp: Date.now(),
-        });
-      } else {
-        console.error("Cannot send pause command: socket not connected");
-      }
-    });
+    // Send immediately without queuing
+    if (this.socket && this.isConnected) {
+      console.log("Sending pause command:", { currentTime });
+      this.socket.emit("pause_command", {
+        sessionCode: this.sessionCode,
+        currentTime: currentTime,
+        timestamp: Date.now(),
+      });
+    } else {
+      console.error("Cannot send pause command: socket not connected");
+    }
   }
 
-  // Send seek command to clients
+  // Fast seek command
   sendSeek(currentTime) {
-    this.queueOperation(() => {
-      if (this.socket && this.isConnected) {
-        this.socket.emit("seek_command", {
-          sessionCode: this.sessionCode,
-          currentTime: currentTime,
-          timestamp: Date.now(),
-        });
-      }
-    });
+    // Send immediately without queuing
+    if (this.socket && this.isConnected) {
+      this.socket.emit("seek_command", {
+        sessionCode: this.sessionCode,
+        currentTime: currentTime,
+        timestamp: Date.now(),
+      });
+    }
   }
 
-  // Send volume command to clients
+  // Fast volume command
   sendVolume(volume) {
-    this.queueOperation(() => {
-      if (this.socket && this.isConnected) {
-        this.socket.emit("volume_command", {
-          sessionCode: this.sessionCode,
-          volume: volume,
-          timestamp: Date.now(),
-        });
-      }
-    });
+    // Send immediately without queuing
+    if (this.socket && this.isConnected) {
+      this.socket.emit("volume_command", {
+        sessionCode: this.sessionCode,
+        volume: volume,
+        timestamp: Date.now(),
+      });
+    }
   }
 
-  // Send sync all command to clients
+  // Fast sync all command
   sendSyncAll(currentTime) {
-    this.queueOperation(() => {
-      if (this.socket && this.isConnected) {
-        this.socket.emit("sync_all_command", {
-          sessionCode: this.sessionCode,
-          currentTime: currentTime,
-          timestamp: Date.now(),
-        });
-      }
-    });
+    // Send immediately without queuing
+    if (this.socket && this.isConnected) {
+      this.socket.emit("sync_all_command", {
+        sessionCode: this.sessionCode,
+        currentTime: currentTime,
+        timestamp: Date.now(),
+      });
+    }
   }
 
-  // Send client time update to host
+  // Fast time update
   sendTimeUpdate(currentTime) {
-    this.queueOperation(() => {
-      if (this.socket && this.isConnected) {
-        this.socket.emit("time_update", {
-          sessionCode: this.sessionCode,
-          currentTime: currentTime,
-          timestamp: Date.now(),
-        });
-      }
-    });
+    // Send immediately without queuing
+    if (this.socket && this.isConnected) {
+      this.socket.emit("time_update", {
+        sessionCode: this.sessionCode,
+        currentTime: currentTime,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   // Set callbacks

@@ -279,7 +279,7 @@ export default function ClientPage() {
     }
   };
 
-  // Precise play synchronization with drift correction
+  // Ultra-precise play synchronization with minimal drift
   const handlePlaySync = (data, now, audio) => {
     const { scheduledTime, currentTime, networkLatency } = data;
 
@@ -288,26 +288,38 @@ export default function ClientPage() {
     setLastHostTime(currentTime);
     setLastHostTimestamp(now);
 
-    // Compensate for estimated one-way latency (default to 0 if not provided)
+    // Use more precise latency compensation
     const estimatedLatency = networkLatency || 0;
     const timeUntilPlay = scheduledTime - now - estimatedLatency;
 
-    if (timeUntilPlay > 0) {
-      // Schedule play for future time
-      console.log(
-        `Scheduling play in ${timeUntilPlay}ms (latency compensated)`
-      );
-      setTimeout(() => {
-        audio.currentTime = currentTime;
-        audio.play().catch((error) => {
-          console.error("Error playing audio:", error);
-        });
-        dispatch(setIsPlaying(true));
-        dispatch(setCurrentTime(currentTime));
+    // Use requestAnimationFrame for more precise timing
+    const schedulePlay = (targetTime) => {
+      const checkTime = () => {
+        const currentTime = performance.now();
+        if (currentTime >= targetTime) {
+          // Execute play command
+          audio.currentTime = data.currentTime;
+          audio.play().catch((error) => {
+            console.error("Error playing audio:", error);
+          });
+          dispatch(setIsPlaying(true));
+          dispatch(setCurrentTime(data.currentTime));
+          startDriftCorrection();
+        } else {
+          // Continue checking
+          requestAnimationFrame(checkTime);
+        }
+      };
+      requestAnimationFrame(checkTime);
+    };
 
-        // Start drift correction after play starts
-        startDriftCorrection();
-      }, timeUntilPlay);
+    if (timeUntilPlay > 0) {
+      // Schedule play for future time with precise timing
+      console.log(
+        `Scheduling play in ${timeUntilPlay.toFixed(2)}ms (latency compensated)`
+      );
+      const targetTime = performance.now() + timeUntilPlay;
+      schedulePlay(targetTime);
     } else {
       // Play immediately if scheduled time has passed
       console.log(
@@ -319,8 +331,6 @@ export default function ClientPage() {
       });
       dispatch(setIsPlaying(true));
       dispatch(setCurrentTime(currentTime));
-
-      // Start drift correction after play starts
       startDriftCorrection();
     }
   };
@@ -424,23 +434,31 @@ export default function ClientPage() {
     }
   };
 
-  // Start drift correction interval
+  // Enhanced drift correction with higher frequency
   const startDriftCorrection = () => {
-    if (syncInterval) {
-      clearInterval(syncInterval);
-    }
+    stopDriftCorrection(); // Clear any existing interval
 
     const interval = setInterval(() => {
-      if (
-        audioElementRef.current?.audio &&
-        !audioElementRef.current.audio.paused
-      ) {
-        // Request time update from host
-        if (sendTimeUpdate) {
-          sendTimeUpdate();
-        }
+      if (!audioElementRef.current?.audio || !isPlaying) {
+        stopDriftCorrection();
+        return;
       }
-    }, 2000); // Check every 2 seconds
+
+      const audio = audioElementRef.current.audio;
+      const now = Date.now();
+      const expectedTime = lastHostTime + (now - lastHostTimestamp) / 1000;
+      const actualTime = audio.currentTime;
+      const drift = actualTime - expectedTime;
+
+      // Only correct if drift is significant (>50ms)
+      if (Math.abs(drift) > 0.05) {
+        console.log(`Drift correction: ${drift.toFixed(3)}s`);
+        audio.currentTime = expectedTime;
+        setDriftCorrection(drift);
+      } else {
+        setDriftCorrection(0);
+      }
+    }, 500); // Check every 500ms instead of 1000ms for more responsive correction
 
     setSyncInterval(interval);
   };
@@ -460,9 +478,33 @@ export default function ClientPage() {
     }
   };
 
-  // Handle loaded metadata
+  // Notify server when audio is ready
   const handleLoadedMetadata = () => {
-    // Audio metadata loaded
+    if (audioElementRef.current?.audio && sessionCode && userName) {
+      // Notify server that this client is ready
+      const syncService = require("../services/syncService").default;
+      if (syncService.socket) {
+        syncService.socket.emit("client-ready", {
+          sessionCode,
+          clientId: syncService.socket.id,
+        });
+        console.log("Notified server: client ready to play");
+      }
+    }
+  };
+
+  // Notify server when audio becomes unavailable
+  const handleAudioError = () => {
+    if (sessionCode && userName) {
+      const syncService = require("../services/syncService").default;
+      if (syncService.socket) {
+        syncService.socket.emit("client-not-ready", {
+          sessionCode,
+          clientId: syncService.socket.id,
+        });
+        console.log("Notified server: client not ready");
+      }
+    }
   };
 
   // Client Audio Player Event Handlers (client only controls volume/mute)
@@ -754,6 +796,8 @@ export default function ClientPage() {
               onPause={handlePause}
               onSeek={handleSeek}
               onVolumeChange={handleVolumeChange}
+              onLoadedMetadata={handleLoadedMetadata}
+              onError={handleAudioError}
               isHost={false}
               disabled={false}
             />
