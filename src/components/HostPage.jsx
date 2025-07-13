@@ -427,7 +427,12 @@ export default function HostPage() {
       toast.error("Not connected to sync server yet. Please wait.");
       return;
     }
-
+    if (!allClientsReady) {
+      toast.error(
+        "Not all clients are ready. Please wait for all clients to be ready before syncing."
+      );
+      return;
+    }
     sendSyncAll(currentTime);
     toast.success("All clients synced to current position");
   };

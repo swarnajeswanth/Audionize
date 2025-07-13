@@ -50,6 +50,7 @@ export default function ClientPage() {
   const audioElementRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const pageVisibilityRef = useRef(null);
+  const pendingSyncCommands = useRef([]);
 
   // Get session code from URL
   const urlCode = searchParams.get("code");
@@ -246,12 +247,14 @@ export default function ClientPage() {
   // Enhanced sync handler with precise timing and drift correction
   const handleSync = (data) => {
     console.log("Received sync command:", data);
-
-    if (!audioElementRef.current?.audio) {
-      console.warn("Audio element not ready for sync");
+    if (
+      !audioElementRef.current?.audio ||
+      audioElementRef.current.audio.readyState < 2
+    ) {
+      console.warn("Audio element not ready for sync, queuing command");
+      pendingSyncCommands.current.push(data);
       return;
     }
-
     const audio = audioElementRef.current.audio;
     const now = Date.now();
 
@@ -512,6 +515,10 @@ export default function ClientPage() {
         }
       } else {
         console.log("[CLIENT] No socket connection available");
+      }
+      // Process any queued sync commands
+      while (pendingSyncCommands.current.length > 0) {
+        handleSync(pendingSyncCommands.current.shift());
       }
     } else {
       console.log("[CLIENT] Missing required data for client ready");
