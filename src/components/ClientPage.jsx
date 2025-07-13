@@ -793,7 +793,7 @@ export default function ClientPage() {
   const [readinessTimeout, setReadinessTimeout] = useState(null);
   const [readinessWarning, setReadinessWarning] = useState(false);
 
-  // Helper to emit client-ready robustly
+  // Helper to emit client-ready robustly with debouncing
   const emitClientReady = () => {
     if (!syncService.socket?.clientReadySent) {
       syncService.emit("client-ready", {
@@ -802,6 +802,13 @@ export default function ClientPage() {
       });
       syncService.socket.clientReadySent = true;
       console.log("[CLIENT] Emitted client-ready (manual/timeout)");
+
+      // Reset the flag after a delay to allow re-emission if needed
+      setTimeout(() => {
+        if (syncService.socket) {
+          syncService.socket.clientReadySent = false;
+        }
+      }, 5000); // Allow re-emission after 5 seconds
     }
   };
 
@@ -987,7 +994,8 @@ export default function ClientPage() {
         {/* Modern Audio Player */}
         {readinessWarning && (
           <div className="text-red-400 text-sm mb-4 text-center">
-            Audio failed to load or sync within 1 minute. Please check your connection or try rejoining.
+            Audio failed to load or sync within 1 minute. Please check your
+            connection or try rejoining.
           </div>
         )}
         {audioUrl && !hostDisconnected ? (

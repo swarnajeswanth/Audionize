@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "monitor": "node scripts/monitor-sync.js",
+    "server": "node server.js"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.8.2",
